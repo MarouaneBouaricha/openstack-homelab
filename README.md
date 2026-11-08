@@ -87,10 +87,12 @@ flowchart TB
 .
 ├── ansible.cfg          # points at inventory/hosts.yml
 ├── inventory/
-│   ├── hosts.yml        # all VMs, grouped by role
+│   ├── hosts.yml        # all VMs by name, grouped by role (mgmt_ip / storage_ip)
 │   ├── group_vars/      # shared vars (networks, interfaces, VIP)
 │   └── host_vars/       # per-host overrides
-└── netplan/             # per-VM netplan — source of truth for host networking
+├── netplan/             # per-VM netplan — source of truth for host networking
+└── playbooks/
+    └── etc-hosts.yml    # hostnames, /etc/hosts, SSH known_hosts + config by name
 ```
 
 ## Quick start
@@ -100,7 +102,13 @@ On the deploy VM (`opadm@10.0.0.10`), Ansible lives in a virtualenv:
 ```bash
 source ~/venv/bin/activate
 cd ~/openstack-homelab
+ansible-playbook playbooks/etc-hosts.yml -K   # once: nodes resolvable by name
 ansible all -m ping
 ```
+
+After `etc-hosts.yml`, every node resolves the others by name (`10.0.0.10
+deployment deploy`, `10.0.0.20 controller`, …) and `ssh controller` works from
+the deploy VM. Plays that need root set `become: true` themselves; pass `-K`
+for the sudo password.
 
 See [netplan/README.md](netplan/README.md) to apply network configs.
