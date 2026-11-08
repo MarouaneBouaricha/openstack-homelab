@@ -2,3 +2,6 @@
 # deploy node has only NAT + management NICs
 storage_interface: null
 provider_interface: null
+
+# The VM's real hostname; "deploy" (the inventory name) is kept as an alias
+node_hostname: deployment

@@ -1,6 +1,8 @@
 ---
 ansible_user: opadm
-ansible_become: true
+
+# Real hostname of each VM (defaults to the inventory name)
+node_hostname: "{{ inventory_hostname }}"
 
 # --- Networks -----------------------------------------------------------------
 mgmt_network: 10.0.0.0/24

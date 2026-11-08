@@ -1,0 +1,22 @@
+---
+# Order matters: add the new entries BEFORE removing 127.0.1.1, otherwise the
+# hostname briefly resolves to nothing and sudo stalls on a DNS lookup.
+- name: Add lab nodes to /etc/hosts
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    insertafter: '^127\.0\.0\.1\s'
+    marker: "# {mark} ANSIBLE MANAGED — openstack-homelab"
+    block: |
+      {% for hv in groups['all'] | map('extract', hostvars) | sort(attribute='mgmt_ip') %}
+      {{ '%-12s' | format(hv.mgmt_ip) }} {{ ([hv.node_hostname, hv.inventory_hostname] | unique) | join(' ') }}
+      {% endfor %}
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ node_hostname }}"
+
+- name: Remove 127.0.1.1 hostname mapping
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    state: absent
