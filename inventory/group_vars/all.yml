@@ -1,5 +1,5 @@
 ---
-ansible_user: ubuntu
+ansible_user: opadm
 ansible_become: true
 
 # --- Networks -----------------------------------------------------------------
