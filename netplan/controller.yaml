@@ -1,0 +1,35 @@
+# =============================================================================
+# Netplan — controller
+# Source of truth for /etc/netplan/50-cloud-init.yaml on host "controller"
+# Deploy: sudo cp controller.yaml /etc/netplan/50-cloud-init.yaml && sudo netplan try
+# =============================================================================
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    # --- NAT — internet access (VMware Workstation NAT, DHCP) ------------------
+    # Provides the default route and DNS.
+    ens33:
+      dhcp4: true
+      dhcp6: false
+
+    # --- (1) Management network — 10.0.0.0/24 ---------------------------------
+    ens37:
+      dhcp4: false
+      dhcp6: false
+      addresses:
+        - 10.0.0.20/24
+
+    # --- (3) Storage network — 10.0.2.0/24 (Ceph) -----------------------------
+    ens38:
+      dhcp4: false
+      dhcp6: false
+      addresses:
+        - 10.0.2.20/24
+
+    # --- (2) Provider network — NO IP (Neutron external) ----------------------
+    # Handed to Neutron (neutron_external_interface). Must stay up without an IP.
+    ens39:
+      dhcp4: false
+      dhcp6: false
+      link-local: []
