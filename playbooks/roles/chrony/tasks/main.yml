@@ -1,0 +1,47 @@
+---
+- name: Install chrony (replaces systemd-timesyncd)
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure chrony
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart chrony
+
+- name: Enable chrony
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+
+- name: Read timezone
+  ansible.builtin.command: timedatectl show -p Timezone --value
+  register: chrony_tz
+  changed_when: false
+
+- name: Set timezone
+  ansible.builtin.command: timedatectl set-timezone {{ chrony_timezone }}
+  when: chrony_tz.stdout != chrony_timezone
+
+- name: Apply config now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for clock sync (up to ~5 min, within 100 ms)
+  ansible.builtin.command: chronyc waitsync 30 0.1 0 10
+  changed_when: false
+
+- name: Read sync status
+  ansible.builtin.command: chronyc -n tracking
+  register: chrony_tracking
+  changed_when: false
+
+- name: Sync status
+  ansible.builtin.debug:
+    msg: "{{ chrony_tracking.stdout_lines | select('match', '^(Reference ID|Stratum|System time|Leap status)') | list }}"

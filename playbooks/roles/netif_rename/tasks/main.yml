@@ -1,0 +1,98 @@
+---
+- name: Load desired interfaces from repo netplan
+  ansible.builtin.set_fact:
+    netif_wanted: "{{ (lookup('file', netif_netplan_src) | from_yaml).network.ethernets | dict2items | map(attribute='value') | list }}"
+    netif_present_macs: >-
+      {{ ansible_facts.interfaces | map('regex_replace', '-', '_')
+         | map('extract', ansible_facts) | selectattr('macaddress', 'defined')
+         | map(attribute='macaddress') | map('lower') | list }}
+
+- name: Every MAC in the repo netplan exists on the host
+  ansible.builtin.assert:
+    that: item.match.macaddress | lower in netif_present_macs
+    fail_msg: >-
+      {{ item['set-name'] }}: MAC {{ item.match.macaddress }} not found on
+      {{ inventory_hostname }} (present: {{ netif_present_macs | join(', ') }}).
+      Fix netplan/{{ inventory_hostname }}.yaml before renaming anything.
+    quiet: true
+  loop: "{{ netif_wanted }}"
+  loop_control:
+    label: "{{ item['set-name'] }}"
+
+- name: Work out which interfaces still need renaming
+  ansible.builtin.set_fact:
+    netif_pending: "{{ netif_wanted | map(attribute='set-name') | reject('in', ansible_facts.interfaces) | list }}"
+
+- name: Install netplan, validate, roll back on failure
+  block:
+    - name: Move other netplan files aside
+      ansible.builtin.shell: |
+        set -e
+        moved=""
+        for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
+          [ -e "$f" ] || continue
+          [ "$f" = "{{ netif_netplan_dest }}" ] && continue
+          mkdir -p {{ netif_backup_dir }}
+          mv "$f" {{ netif_backup_dir }}/
+          moved="$moved $f"
+        done
+        echo "$moved"
+      register: netif_moved
+      changed_when: netif_moved.stdout | trim | length > 0
+
+    - name: Install repo netplan
+      ansible.builtin.copy:
+        src: "{{ netif_netplan_src }}"
+        dest: "{{ netif_netplan_dest }}"
+        owner: root
+        group: root
+        mode: "0600"
+      register: netif_copied
+
+    - name: Validate netplan
+      ansible.builtin.command: netplan generate
+      changed_when: false
+  rescue:
+    - name: Restore previous netplan files
+      ansible.builtin.shell: |
+        rm -f {{ netif_netplan_dest }}
+        [ -d {{ netif_backup_dir }} ] && cp -a {{ netif_backup_dir }}/. /etc/netplan/
+        netplan generate
+      changed_when: true
+
+    - name: Stop here
+      ansible.builtin.fail:
+        msg: "netplan generate failed on {{ inventory_hostname }}; previous config restored."
+
+- name: Reboot to apply interface names
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+    msg: "Rebooting to apply interface names (preconfig)"
+  when:
+    - netif_reboot | bool
+    - netif_pending | length > 0 or netif_copied is changed or netif_moved is changed
+
+- name: Check new interface names
+  when: netif_reboot | bool
+  block:
+    - name: Refresh network facts
+      ansible.builtin.setup:
+        gather_subset: [network]
+
+    - name: All interfaces carry their new names
+      ansible.builtin.assert:
+        that: item['set-name'] in ansible_facts.interfaces
+        fail_msg: "{{ item['set-name'] }} missing after reboot on {{ inventory_hostname }}"
+        quiet: true
+      loop: "{{ netif_wanted }}"
+      loop_control:
+        label: "{{ item['set-name'] }}"
+
+- name: Reminder to reboot manually
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} still uses old names ({{ netif_pending | join(', ') }} pending).
+      Netplan is installed; reboot it yourself: sudo reboot
+  when:
+    - not netif_reboot | bool
+    - netif_pending | length > 0

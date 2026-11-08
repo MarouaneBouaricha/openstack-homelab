@@ -1,20 +1,27 @@
 # =============================================================================
 # Netplan — deploy
-# Source of truth for /etc/netplan/50-cloud-init.yaml on host "deploy"
-# Deploy: sudo cp deploy.yaml /etc/netplan/50-cloud-init.yaml && sudo netplan try
+# Source of truth for /etc/netplan/01-homelab.yaml on host "deploy"
+# Interfaces are matched by MAC and renamed (set-name); new names apply on
+# reboot. Applied by: ansible-playbook playbooks/preconfig.yml --tags netif -K
 # =============================================================================
 network:
   version: 2
   renderer: networkd
   ethernets:
-    # --- NAT — internet access (VMware Workstation NAT, DHCP) ------------------
+    # --- NAT — internet access (VMware Workstation NAT, DHCP) -- was ens33 --
     # Provides the default route and DNS.
-    ens33:
+    nat01:
+      match:
+        macaddress: "00:0c:29:1c:13:c1"
+      set-name: nat01
       dhcp4: true
       dhcp6: false
 
-    # --- (1) Management network — 10.0.0.0/24 ---------------------------------
-    ens37:
+    # --- (1) Management network — 10.0.0.0/24 -------------------- was ens37 --
+    mgmt01:
+      match:
+        macaddress: "00:0c:29:1c:13:cb"
+      set-name: mgmt01
       dhcp4: false
       dhcp6: false
       addresses:

@@ -1,27 +1,37 @@
 # =============================================================================
 # Netplan — ceph
-# Source of truth for /etc/netplan/50-cloud-init.yaml on host "ceph"
-# Deploy: sudo cp ceph.yaml /etc/netplan/50-cloud-init.yaml && sudo netplan try
+# Source of truth for /etc/netplan/01-homelab.yaml on host "ceph"
+# Interfaces are matched by MAC and renamed (set-name); new names apply on
+# reboot. Applied by: ansible-playbook playbooks/preconfig.yml --tags netif -K
 # =============================================================================
 network:
   version: 2
   renderer: networkd
   ethernets:
-    # --- NAT — internet access (VMware Workstation NAT, DHCP) ------------------
+    # --- NAT — internet access (VMware Workstation NAT, DHCP) -- was ens33 --
     # Provides the default route and DNS.
-    ens33:
+    nat01:
+      match:
+        macaddress: "00:50:56:28:6c:e1"
+      set-name: nat01
       dhcp4: true
       dhcp6: false
 
-    # --- (1) Management network — 10.0.0.0/24 ---------------------------------
-    ens37:
+    # --- (1) Management network — 10.0.0.0/24 -------------------- was ens37 --
+    mgmt01:
+      match:
+        macaddress: "00:0c:29:ec:1e:75"
+      set-name: mgmt01
       dhcp4: false
       dhcp6: false
       addresses:
         - 10.0.0.50/24
 
-    # --- (3) Storage network — 10.0.2.0/24 (Ceph) -----------------------------
-    ens38:
+    # --- (3) Storage network — 10.0.2.0/24 (Ceph) ---------------- was ens38 --
+    stor01:
+      match:
+        macaddress: "00:0c:29:ec:1e:7f"
+      set-name: stor01
       dhcp4: false
       dhcp6: false
       addresses:

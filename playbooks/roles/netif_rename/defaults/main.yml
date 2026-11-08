@@ -1,0 +1,7 @@
+---
+# Repo netplan file for this host (source of truth)
+netif_netplan_src: "{{ playbook_dir }}/../netplan/{{ inventory_hostname }}.yaml"
+netif_netplan_dest: /etc/netplan/01-homelab.yaml
+netif_backup_dir: /etc/netplan.bak
+# false on the deploy VM: rebooting it would kill the running playbook
+netif_reboot: true

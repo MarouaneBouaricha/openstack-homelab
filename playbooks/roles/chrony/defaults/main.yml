@@ -1,0 +1,10 @@
+---
+# Host serving time to the lab (resolved via /etc/hosts)
+chrony_server: deployment
+chrony_server_group: deployment
+chrony_upstream_pools:
+  - ntp.ubuntu.com
+  - 0.ubuntu.pool.ntp.org
+  - 1.ubuntu.pool.ntp.org
+chrony_allow_network: "{{ mgmt_network }}"
+chrony_timezone: Etc/UTC

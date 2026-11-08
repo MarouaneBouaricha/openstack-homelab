@@ -1,0 +1,30 @@
+---
+# Runs as the SSH user (become: false) on the deploy VM.
+- name: Scan SSH host keys by name and IP
+  ansible.builtin.command: >-
+    ssh-keyscan -T 5 -t ed25519
+    {{ item }},{{ hostvars[item].mgmt_ip }}
+  loop: "{{ ssh_client_nodes }}"
+  register: ssh_client_keyscan
+  changed_when: false
+
+- name: Trust host keys (name + IP)
+  ansible.builtin.known_hosts:
+    path: ~/.ssh/known_hosts
+    name: "{{ item.item }}"
+    key: "{{ item.stdout_lines | select('match', '^[^#]') | first }}"
+  loop: "{{ ssh_client_keyscan.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: SSH client config for lab nodes
+  ansible.builtin.blockinfile:
+    path: ~/.ssh/config
+    create: true
+    mode: "0600"
+    marker: "# {mark} ANSIBLE MANAGED — openstack-homelab"
+    block: |
+      Host {{ ssh_client_nodes | join(' ') }}
+          User {{ ansible_user }}
+          IdentityFile ~/.ssh/id_ed25519
+          IdentitiesOnly yes

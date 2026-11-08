@@ -1,0 +1,65 @@
+---
+# =============================================================================
+# Node pre-configuration (run before Kolla-Ansible / Ceph)
+#
+#   hosts  hostnames, /etc/hosts, SSH known_hosts + config by name
+#   netif  rename NICs by MAC (nat01, mgmt01, stor01, prov01) from netplan/.
+#          Reboots nodes ONE AT A TIME. The deploy VM is not rebooted:
+#          reboot it by hand afterwards.
+#   ntp    chrony: the deploy VM serves time, every other node follows it
+#
+# Run from the repo root on the deploy VM:
+#   ansible-playbook playbooks/preconfig.yml -K                 # everything
+#   ansible-playbook playbooks/preconfig.yml -K --tags ntp      # one part
+# =============================================================================
+
+# --- hosts -------------------------------------------------------------------
+# Deploy VM first: once its /etc/hosts is written, the rest are reachable by name.
+- name: Name resolution | deploy VM
+  hosts: deployment
+  become: true
+  tags: [hosts]
+  roles: [etc_hosts]
+
+- name: Name resolution | other nodes
+  hosts: all:!deployment
+  become: true
+  tags: [hosts]
+  roles: [etc_hosts]
+
+- name: SSH client config | deploy VM
+  hosts: deployment
+  become: false
+  tags: [hosts]
+  vars:
+    ssh_client_nodes: "{{ groups['all'] | difference(groups['deployment']) }}"
+  roles: [ssh_client]
+
+# --- netif -------------------------------------------------------------------
+- name: Rename interfaces | other nodes, one at a time
+  hosts: all:!deployment
+  become: true
+  serial: 1
+  tags: [netif]
+  roles: [netif_rename]
+
+- name: Rename interfaces | deploy VM (no automatic reboot)
+  hosts: deployment
+  become: true
+  tags: [netif]
+  vars:
+    netif_reboot: false
+  roles: [netif_rename]
+
+# --- ntp ---------------------------------------------------------------------
+- name: Time sync | server
+  hosts: deployment
+  become: true
+  tags: [ntp]
+  roles: [chrony]
+
+- name: Time sync | clients
+  hosts: all:!deployment
+  become: true
+  tags: [ntp]
+  roles: [chrony]
