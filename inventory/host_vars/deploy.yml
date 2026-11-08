@@ -1,0 +1,4 @@
+---
+# deploy node has only NAT + management NICs
+storage_interface: null
+provider_interface: null

@@ -1,0 +1,19 @@
+---
+ansible_user: ubuntu
+ansible_become: true
+
+# --- Networks -----------------------------------------------------------------
+mgmt_network: 10.0.0.0/24
+storage_network: 10.0.2.0/24
+# Default route + DNS come from the VMware NAT interface (DHCP)
+
+# --- Interfaces (must match netplan/) ------------------------------------------
+nat_interface: ens33
+mgmt_interface: ens37
+storage_interface: ens38   # also Kolla's storage_interface
+provider_interface: ens39  # controller + computes only, no IP
+
+# --- Kolla --------------------------------------------------------------------
+kolla_internal_vip_address: 10.0.0.100
+network_interface: "{{ mgmt_interface }}"
+neutron_external_interface: "{{ provider_interface }}"
