@@ -28,9 +28,9 @@ flowchart TB
 
     subgraph PROVIDER["② Provider Network — no IP (Neutron external)"]
         direction LR
-        p_ctl["controller<br/>ens39"]
-        p_c1["compute01<br/>ens39"]
-        p_c2["compute02<br/>ens39"]
+        p_ctl["controller<br/>prov01"]
+        p_c1["compute01<br/>prov01"]
+        p_c2["compute02<br/>prov01"]
     end
 
     subgraph STORAGE["③ Storage Network — 10.0.2.0/24 (Ceph)"]
@@ -55,7 +55,7 @@ flowchart TB
     ceph --- s_ceph
     s_ctl & s_c1 & s_c2 == "RBD" ==> s_ceph
 
-    MGMT -. "ens33 · DHCP" .-> internet
+    MGMT -. "nat01 · DHCP" .-> internet
 
     classDef vipStyle stroke:#e03131,color:#e03131,stroke-width:2px
     class vip vipStyle
@@ -76,10 +76,10 @@ flowchart TB
 
 | # | Name       | CIDR          | Purpose                                                     |
 |---|------------|---------------|-------------------------------------------------------------|
-| —  | NAT        | DHCP (VMware) | Internet access, default route + DNS (`ens33`)              |
-| ① | Management | 10.0.0.0/24   | SSH, Ansible, OpenStack APIs, internal VIP (`network_interface`, `ens37`) |
-| ② | Provider   | no IP         | Neutron external network (`neutron_external_interface`) `ens39` on controller/computes |
-| ③ | Storage    | 10.0.2.0/24   | Ceph client/public traffic (`storage_interface`, `ens38`)    |
+| —  | NAT        | DHCP (VMware) | Internet access, default route + DNS (`nat01`)              |
+| ① | Management | 10.0.0.0/24   | SSH, Ansible, OpenStack APIs, internal VIP (`network_interface`, `mgmt01`) |
+| ② | Provider   | no IP         | Neutron external network (`neutron_external_interface`, `prov01`) on controller/computes |
+| ③ | Storage    | 10.0.2.0/24   | Ceph client/public traffic (`storage_interface`, `stor01`)    |
 
 ## Repository layout
 
@@ -92,7 +92,8 @@ flowchart TB
 │   └── host_vars/       # per-host overrides
 ├── netplan/             # per-VM netplan — source of truth for host networking
 └── playbooks/
-    └── etc-hosts.yml    # hostnames, /etc/hosts, SSH known_hosts + config by name
+    ├── preconfig.yml    # node prep: hosts, NIC names, time sync (tags below)
+    └── roles/           # etc_hosts, ssh_client, netif_rename, chrony
 ```
 
 ## Quick start
@@ -102,13 +103,17 @@ On the deploy VM (`opadm@10.0.0.10`), Ansible lives in a virtualenv:
 ```bash
 source ~/venv/bin/activate
 cd ~/openstack-homelab
-ansible-playbook playbooks/etc-hosts.yml -K   # once: nodes resolvable by name
+ansible-playbook playbooks/preconfig.yml -K   # node prep (idempotent)
 ansible all -m ping
 ```
 
-After `etc-hosts.yml`, every node resolves the others by name (`10.0.0.10
-deployment deploy`, `10.0.0.20 controller`, …) and `ssh controller` works from
-the deploy VM. Plays that need root set `become: true` themselves; pass `-K`
-for the sudo password.
+`preconfig.yml` runs in three tagged parts (`--tags hosts|netif|ntp`):
 
-See [netplan/README.md](netplan/README.md) to apply network configs.
+| Tag     | What it does |
+|---------|--------------|
+| `hosts` | Sets hostnames and writes every node into `/etc/hosts` (`10.0.0.10 deployment deploy`, `10.0.0.20 controller`, …); drops the `127.0.1.1` line. On the deploy VM, trusts host keys by name and adds `~/.ssh/config`, so `ssh controller` works. |
+| `netif` | Renames NICs by MAC to `nat01` / `mgmt01` / `stor01` / `prov01` from [netplan/](netplan/README.md). Reboots nodes one at a time; reboot the deploy VM yourself afterwards. |
+| `ntp`   | Installs chrony. The deploy VM syncs from the internet and serves `10.0.0.0/24`, with `local stratum 10` as a fallback; every other node uses only `deployment`, so the nodes stay within Ceph's 0.05 s clock-skew limit. Time zone: UTC. |
+
+Plays that need root set `become: true` themselves; pass `-K` for the sudo
+password.
