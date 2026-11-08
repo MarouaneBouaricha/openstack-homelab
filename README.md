@@ -95,8 +95,12 @@ flowchart TB
 
 ## Quick start
 
+On the deploy VM (`opadm@10.0.0.10`), Ansible lives in a virtualenv:
+
 ```bash
-ansible all -m ping          # from the deploy node, repo root
+source ~/venv/bin/activate
+cd ~/openstack-homelab
+ansible all -m ping
 ```
 
 See [netplan/README.md](netplan/README.md) to apply network configs.
