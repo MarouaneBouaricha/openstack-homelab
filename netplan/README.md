@@ -15,7 +15,8 @@ VIP `10.0.0.100` is **not** configured here — keepalived (kolla) owns it.
 
 > The NAT interface (VMware Workstation NAT) gets its address, default route and
 > DNS over DHCP. Management and storage are static with no gateway.
-> ⚠️ The NAT NIC is assumed to be `ens33` and the new provider NIC `ens39` (VMware's default first NIC) — check with `ip -br link`.
+> NIC names are verified on the VMs: `ens33` (NAT), `ens37` (management),
+> `ens38` (storage), `ens39` (provider, controller and computes only).
 
 ## Apply
 
