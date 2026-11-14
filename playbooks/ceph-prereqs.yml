@@ -1,0 +1,39 @@
+---
+# =============================================================================
+# Ceph node prerequisites (run after preconfig.yml, before cephadm bootstrap)
+#
+#   upgrade  apt update + upgrade
+#   docker   docker.io, enabled and started
+#   cephadm  download.ceph.com repo ({{ ceph_release }}, default squid) +
+#            cephadm + ceph-common
+#   reboot   only nodes that need it (/var/run/reboot-required), one at a time
+#
+# Installs packages only: no cluster is bootstrapped or configured.
+#
+# Run from the repo root on the deploy VM:
+#   ansible-playbook playbooks/ceph-prereqs.yml -K
+#   ansible-playbook playbooks/ceph-prereqs.yml -K -e ceph_release=tentacle
+#   ansible-playbook playbooks/ceph-prereqs.yml -K --skip-tags reboot
+# =============================================================================
+- name: Ceph prerequisites | packages
+  hosts: ceph_nodes
+  become: true
+  roles: [ceph_prereqs]
+
+- name: Ceph prerequisites | reboot if required, one node at a time
+  hosts: ceph_nodes
+  become: true
+  serial: 1
+  gather_facts: false
+  tags: [reboot]
+  tasks:
+    - name: Check whether a reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: ceph_prereqs_reboot
+
+    - name: Reboot
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        msg: "Rebooting after package upgrade (ceph-prereqs)"
+      when: ceph_prereqs_reboot.stat.exists

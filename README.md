@@ -101,7 +101,9 @@ flowchart TB
 ├── netplan/             # per-VM netplan — source of truth for host networking
 └── playbooks/
     ├── preconfig.yml    # node prep: hosts, NIC names, time sync (tags below)
-    └── roles/           # clone_identity, etc_hosts, ssh_client, netif_rename, chrony
+    ├── ceph-prereqs.yml # Ceph nodes: upgrade, Docker, cephadm (no cluster yet)
+    └── roles/           # clone_identity, etc_hosts, ssh_client, netif_rename,
+                         # chrony, ceph_prereqs
 ```
 
 ## Syncing the repo to the deploy VM
@@ -151,6 +153,28 @@ ansible all -m ping
 
 Plays that need root set `become: true` themselves; pass `-K` for the sudo
 password.
+
+## Ceph prerequisites
+
+After `preconfig.yml`, prepare the Ceph nodes for `cephadm bootstrap`:
+
+```bash
+ansible-playbook playbooks/ceph-prereqs.yml -K
+```
+
+| Tag       | What it does |
+|-----------|--------------|
+| `upgrade` | `apt update` + `apt upgrade` |
+| `docker`  | Installs `docker.io` (cephadm's container runtime), enabled and started |
+| `cephadm` | Adds the download.ceph.com repo (signed-by keyring) for `ceph_release` and installs `cephadm` + `ceph-common` |
+| `reboot`  | Reboots only nodes with `/var/run/reboot-required`, one at a time |
+
+Base tools (`curl`, `lvm2`, `chrony`, …) are always installed. `ceph_release`
+defaults to `squid` (19.2); pick another with `-e ceph_release=tentacle` (20.2)
+or `reef` (18.2). Without that repo, Ubuntu's own cephadm 17.2 would be
+installed. `systemd-timesyncd` is deliberately not installed: it conflicts with
+chrony and would remove it. The playbook installs packages only; no cluster is
+bootstrapped.
 
 ## Adding a cloned VM
 
