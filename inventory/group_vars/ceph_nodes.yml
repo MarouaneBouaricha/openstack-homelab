@@ -1,0 +1,3 @@
+---
+# Ceph nodes have no provider NIC
+provider_interface: null

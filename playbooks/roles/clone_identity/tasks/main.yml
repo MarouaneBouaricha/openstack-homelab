@@ -1,0 +1,44 @@
+---
+# A cloned VM keeps its parent's /etc/machine-id (systemd-networkd derives the
+# DHCP client ID from it, so both VMs ask for the same NAT lease) and its SSH
+# host keys (so the clone impersonates its parent). Reset both, but only on a
+# host whose machine-id matches a host listed EARLIER in the inventory: the
+# original keeps its identity, and the role is a no-op once every host is unique.
+# It compares facts across hosts, so run it without --limit.
+- name: Find earlier hosts with the same machine-id
+  ansible.builtin.set_fact:
+    clone_identity_twins: >-
+      {{ groups['all'][:groups['all'].index(inventory_hostname)]
+         | map('extract', hostvars)
+         | selectattr('ansible_machine_id', 'defined')
+         | selectattr('ansible_machine_id', 'equalto', ansible_machine_id)
+         | map(attribute='inventory_hostname') | list }}
+
+- name: Reset clone identity
+  when: clone_identity_twins | length > 0
+  block:
+    - name: Report clone
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} shares machine-id with
+          {{ clone_identity_twins | join(', ') }}: regenerating machine-id and SSH host keys.
+
+    - name: Regenerate machine-id
+      ansible.builtin.shell: |
+        set -e
+        rm -f /etc/machine-id
+        systemd-machine-id-setup
+        # dbus keeps its own copy on some installs; point it at the new one
+        if [ ! -L /var/lib/dbus/machine-id ]; then
+          rm -f /var/lib/dbus/machine-id
+          ln -s /etc/machine-id /var/lib/dbus/machine-id
+        fi
+      changed_when: true
+
+    - name: Regenerate SSH host keys (open sessions stay up)
+      ansible.builtin.shell: |
+        set -e
+        rm -f /etc/ssh/ssh_host_*
+        ssh-keygen -A
+        systemctl restart ssh
+      changed_when: true

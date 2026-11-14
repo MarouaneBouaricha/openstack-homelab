@@ -2,7 +2,8 @@
 # =============================================================================
 # Node pre-configuration (run before Kolla-Ansible / Ceph)
 #
-#   hosts  hostnames, /etc/hosts, SSH known_hosts + config by name
+#   hosts  hostnames, /etc/hosts, SSH known_hosts + config by name; on cloned
+#          VMs, fresh machine-id + SSH host keys first (also: --tags clone)
 #   netif  rename NICs by MAC (nat01, mgmt01, stor01, prov01) from netplan/.
 #          Reboots nodes ONE AT A TIME. The deploy VM is not rebooted:
 #          reboot it by hand afterwards.
@@ -20,6 +21,14 @@
   become: true
   tags: [hosts]
   roles: [etc_hosts]
+
+# Cloned VMs: new machine-id + SSH host keys BEFORE the host keys are scanned
+# below. Only touches hosts that share a machine-id with an earlier host.
+- name: Clone identity | other nodes
+  hosts: all:!deployment
+  become: true
+  tags: [hosts, clone]
+  roles: [clone_identity]
 
 - name: Name resolution | other nodes
   hosts: all:!deployment

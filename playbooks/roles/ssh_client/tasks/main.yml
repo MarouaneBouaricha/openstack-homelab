@@ -7,13 +7,21 @@
   loop: "{{ ssh_client_nodes }}"
   register: ssh_client_keyscan
   changed_when: false
+  failed_when: false   # a powered-off node must not stop the run
+
+- name: Nodes that did not answer (keys left as they are)
+  ansible.builtin.debug:
+    msg: "No SSH host key from: {{ ssh_client_down | join(', ') }}. Rerun --tags hosts once they are up."
+  vars:
+    ssh_client_down: "{{ ssh_client_keyscan.results | rejectattr('stdout', 'search', '(?m)^[^#]') | map(attribute='item') | list }}"
+  when: ssh_client_down | length > 0
 
 - name: Trust host keys (name + IP)
   ansible.builtin.known_hosts:
     path: ~/.ssh/known_hosts
     name: "{{ item.item }}"
     key: "{{ item.stdout_lines | select('match', '^[^#]') | first }}"
-  loop: "{{ ssh_client_keyscan.results }}"
+  loop: "{{ ssh_client_keyscan.results | selectattr('stdout', 'search', '(?m)^[^#]') | list }}"
   loop_control:
     label: "{{ item.item }}"
 

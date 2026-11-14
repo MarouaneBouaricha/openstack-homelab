@@ -19,7 +19,9 @@ are meaningful and stable:
 | controller | DHCP  | 10.0.0.20 | up, no IP | 10.0.2.20 |
 | compute01  | DHCP  | 10.0.0.30 | up, no IP | 10.0.2.30 |
 | compute02  | DHCP  | 10.0.0.40 | up, no IP | 10.0.2.40 |
-| ceph       | DHCP  | 10.0.0.50 | —         | 10.0.2.50 |
+| ceph01     | DHCP  | 10.0.0.50 | —         | 10.0.2.50 |
+| ceph02     | DHCP  | 10.0.0.60 | —         | 10.0.2.60 |
+| ceph03     | DHCP  | 10.0.0.70 | —         | 10.0.2.70 |
 
 VIP `10.0.0.100` is **not** configured here — keepalived (kolla) owns it.
 Management and storage are static with no gateway; the default route comes
@@ -46,3 +48,6 @@ by hand when the run asks you to.
 
 > If you replace a VM's NIC in VMware its MAC changes: update the MAC in the
 > matching file here first, or the playbook will refuse to run on that host.
+> The same goes for a **cloned** VM: its copied netplan still names the
+> parent's MACs, so none of its NICs match and it boots without an IP. See
+> "Adding a cloned VM" in the main README.

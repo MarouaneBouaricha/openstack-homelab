@@ -1,6 +1,6 @@
 # =============================================================================
-# Netplan — ceph
-# Source of truth for /etc/netplan/01-homelab.yaml on host "ceph"
+# Netplan — ceph01
+# Source of truth for /etc/netplan/01-homelab.yaml on host "ceph01"
 # Interfaces are matched by MAC and renamed (set-name); new names apply on
 # reboot. Applied by: ansible-playbook playbooks/preconfig.yml --tags netif -K
 # =============================================================================
