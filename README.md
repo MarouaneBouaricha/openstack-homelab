@@ -124,10 +124,11 @@ git config --add remote.origin.pushurl git@github.com:MarouaneBouaricha/openstac
 git config --add remote.origin.pushurl opadm@10.0.0.10:openstack-homelab
 ```
 
-Don't edit tracked files on the deploy VM: the push is refused while its
-working tree has changes (`git -C ~/openstack-homelab status` shows them).
-Untracked files there, such as Kolla's `all-in-one` and `inventory/multinode`,
-are left alone.
+Don't edit tracked files on the deploy VM (Kolla's `all-in-one` and
+`inventory/multinode` included): the push is refused while its working tree
+has changes (`git -C ~/openstack-homelab status` shows them). Commit on the
+workstation and push instead. A new file created only on the VM blocks the push
+once the same path is committed here; move it aside on the VM first.
 
 ## Quick start
 
