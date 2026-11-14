@@ -104,6 +104,31 @@ flowchart TB
     └── roles/           # clone_identity, etc_hosts, ssh_client, netif_rename, chrony
 ```
 
+## Syncing the repo to the deploy VM
+
+Edit and commit on the workstation; `~/openstack-homelab` on the deploy VM is a
+git repo that **receives pushes** (`receive.denyCurrentBranch=updateInstead`),
+so its files update the moment you push. `origin` has two push URLs, so one
+command updates GitHub and the deploy VM:
+
+```bash
+git push            # GitHub + deploy VM
+git push deploy     # deploy VM only
+```
+
+One-time setup on a new workstation clone:
+
+```bash
+git remote add deploy opadm@10.0.0.10:openstack-homelab
+git config --add remote.origin.pushurl git@github.com:MarouaneBouaricha/openstack-homelab.git
+git config --add remote.origin.pushurl opadm@10.0.0.10:openstack-homelab
+```
+
+Don't edit tracked files on the deploy VM: the push is refused while its
+working tree has changes (`git -C ~/openstack-homelab status` shows them).
+Untracked files there, such as Kolla's `all-in-one` and `inventory/multinode`,
+are left alone.
+
 ## Quick start
 
 On the deploy VM (`opadm@10.0.0.10`), Ansible lives in a virtualenv:
