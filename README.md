@@ -94,6 +94,7 @@ flowchart TB
 ```
 .
 ├── ansible.cfg          # points at inventory/hosts.yml
+├── ceph/                # Ceph cluster runbook (cephadm bootstrap → pools/users)
 ├── inventory/
 │   ├── hosts.yml        # all VMs by name, grouped by role (mgmt_ip / storage_ip)
 │   ├── group_vars/      # shared vars (networks, interfaces, VIP)
@@ -177,7 +178,13 @@ installed. `systemd-timesyncd` is deliberately not installed: it conflicts with
 chrony and would remove it. The playbook installs packages only; no cluster is
 bootstrapped.
 
-## Adding Ceph hosts
+## Ceph cluster
+
+The full build (bootstrap, hosts, OSDs, OpenStack pools and users) is in
+[ceph/README.md](ceph/README.md), with the commands in
+[ceph/ceph-setup.sh](ceph/ceph-setup.sh).
+
+### Adding Ceph hosts
 
 After `cephadm bootstrap` on ceph01, cephadm must be able to SSH **as root**
 from ceph01 into every other Ceph node with the cluster's own key. Root has no
