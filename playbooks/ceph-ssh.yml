@@ -1,0 +1,104 @@
+---
+# =============================================================================
+# cephadm SSH access: lets the cluster's admin node (ceph01) SSH as root into
+# every Ceph node, which `ceph orch host add` needs.
+#
+#   (always) reads the cluster's SSH public key on ceph01 with
+#            `ceph cephadm get-pub-key` (the key cephadm really uses;
+#            bootstrap also wrote it to /etc/ceph/ceph.pub)
+#   sshd     drop-in so root may log in with a key (never with a password)
+#   authkey  adds that key to /root/.ssh/authorized_keys on every Ceph node
+#   check    from ceph01: `ceph cephadm check-host <host> <storage_ip>`, which
+#            SSHes in as root and checks Docker, lvm2, time sync, hostname
+#
+# Run after `cephadm bootstrap` on ceph01, from the repo root on the deploy VM:
+#   ansible-playbook playbooks/ceph-ssh.yml -K
+# Then, on ceph01:
+#   ceph orch host add ceph02 10.0.2.60
+#   ceph orch host add ceph03 10.0.2.70
+# =============================================================================
+- name: cephadm SSH | read the cluster public key on the admin node
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  tags: [always]
+  tasks:
+    - name: Get cephadm SSH public key
+      ansible.builtin.command: ceph cephadm get-pub-key
+      register: cephadm_pubkey
+      changed_when: false
+
+- name: cephadm SSH | authorize the key for root on every Ceph node
+  hosts: ceph_nodes
+  become: true
+  gather_facts: false
+  vars:
+    cephadm_ssh_pubkey: "{{ hostvars[ceph_admin_host | default('ceph01')].cephadm_pubkey.stdout | trim }}"
+  handlers:
+    - name: Reload sshd
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+  tasks:
+    # sshd keeps the FIRST value it reads; drop-ins are read before the main
+    # file, in name order, so 01- wins over cloud-init's 50-cloud-init.conf.
+    - name: Allow root login with a key only
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/01-cephadm-root.conf
+        content: |
+          # Managed by openstack-homelab (playbooks/ceph-ssh.yml): cephadm SSHes in as root
+          PermitRootLogin prohibit-password
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload sshd
+      tags: [sshd]
+
+    - name: Create /root/.ssh
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: [authkey]
+
+    - name: Add cephadm key to root's authorized_keys
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ cephadm_ssh_pubkey }}"
+        create: true
+        owner: root
+        group: root
+        mode: "0600"
+      tags: [authkey]
+
+    - name: Apply sshd change before the check
+      ansible.builtin.meta: flush_handlers
+
+- name: cephadm SSH | check every node from the admin node
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  tags: [check]
+  tasks:
+    - name: ceph cephadm check-host
+      ansible.builtin.command: >-
+        ceph cephadm check-host {{ item }} {{ hostvars[item].storage_ip }}
+      loop: "{{ groups['ceph_nodes'] }}"
+      register: cephadm_check
+      changed_when: false
+      failed_when: false
+
+    - name: Results
+      ansible.builtin.debug:
+        msg: "{{ item.item }}: {{ 'OK' if item.rc == 0 else 'FAILED' }} — {{ (item.stdout ~ item.stderr) | trim }}"
+      loop: "{{ cephadm_check.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Fail if a node did not pass
+      ansible.builtin.fail:
+        msg: "check-host failed on: {{ cephadm_check.results | rejectattr('rc', 'eq', 0) | map(attribute='item') | join(', ') }}"
+      when: cephadm_check.results | rejectattr('rc', 'eq', 0) | list | length > 0

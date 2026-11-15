@@ -102,6 +102,7 @@ flowchart TB
 └── playbooks/
     ├── preconfig.yml    # node prep: hosts, NIC names, time sync (tags below)
     ├── ceph-prereqs.yml # Ceph nodes: upgrade, Docker, cephadm (no cluster yet)
+    ├── ceph-ssh.yml     # root SSH key from ceph01 to all Ceph nodes (cephadm)
     └── roles/           # clone_identity, etc_hosts, ssh_client, netif_rename,
                          # chrony, ceph_prereqs
 ```
@@ -175,6 +176,31 @@ or `reef` (18.2). Without that repo, Ubuntu's own cephadm 17.2 would be
 installed. `systemd-timesyncd` is deliberately not installed: it conflicts with
 chrony and would remove it. The playbook installs packages only; no cluster is
 bootstrapped.
+
+## Adding Ceph hosts
+
+After `cephadm bootstrap` on ceph01, cephadm must be able to SSH **as root**
+from ceph01 into every other Ceph node with the cluster's own key. Root has no
+password, so `ssh-copy-id` from ceph01 can't do it; Ansible does instead:
+
+```bash
+ansible-playbook playbooks/ceph-ssh.yml -K
+```
+
+| Tag       | What it does |
+|-----------|--------------|
+| *(always)* | Reads the cluster key on ceph01: `ceph cephadm get-pub-key` (same as `/etc/ceph/ceph.pub`) |
+| `sshd`    | `/etc/ssh/sshd_config.d/01-cephadm-root.conf`: `PermitRootLogin prohibit-password` (keys only), validated with `sshd -t` |
+| `authkey` | Adds the key to `/root/.ssh/authorized_keys` on every Ceph node |
+| `check`   | On ceph01, `ceph cephadm check-host <host> <storage_ip>` for each node: SSH as root plus cephadm's host checks |
+
+When every node passes, add them from ceph01 (inside or outside `cephadm shell`):
+
+```bash
+ceph orch host add ceph02 10.0.2.60
+ceph orch host add ceph03 10.0.2.70
+ceph orch host ls
+```
 
 ## Adding a cloned VM
 
