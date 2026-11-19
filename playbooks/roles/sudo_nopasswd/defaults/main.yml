@@ -1,0 +1,3 @@
+---
+# User that gets passwordless sudo (Kolla-Ansible needs it on every target)
+sudo_nopasswd_user: "{{ ansible_user }}"

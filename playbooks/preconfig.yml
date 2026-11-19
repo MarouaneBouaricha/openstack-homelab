@@ -8,11 +8,22 @@
 #          Reboots nodes ONE AT A TIME. The deploy VM is not rebooted:
 #          reboot it by hand afterwards.
 #   ntp    chrony: the deploy VM serves time, every other node follows it
+#   sudo   passwordless sudo for ansible_user on every node except the deploy
+#          VM (Kolla-Ansible bootstrap-servers/deploy need it)
 #
 # Run from the repo root on the deploy VM:
 #   ansible-playbook playbooks/preconfig.yml -K                 # everything
 #   ansible-playbook playbooks/preconfig.yml -K --tags ntp      # one part
 # =============================================================================
+
+# --- sudo --------------------------------------------------------------------
+# First, so the plays below (and Kolla-Ansible) no longer need the password
+# on these nodes.
+- name: Passwordless sudo | other nodes
+  hosts: all:!deployment
+  become: true
+  tags: [sudo]
+  roles: [sudo_nopasswd]
 
 # --- hosts -------------------------------------------------------------------
 # Deploy VM first: once its /etc/hosts is written, the rest are reachable by name.

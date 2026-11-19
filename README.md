@@ -101,11 +101,11 @@ flowchart TB
 │   └── host_vars/       # per-host overrides
 ├── netplan/             # per-VM netplan — source of truth for host networking
 └── playbooks/
-    ├── preconfig.yml    # node prep: hosts, NIC names, time sync (tags below)
+    ├── preconfig.yml    # node prep: sudo, hosts, NIC names, time sync (tags below)
     ├── ceph-prereqs.yml # Ceph nodes: upgrade, Docker, cephadm (no cluster yet)
     ├── ceph-ssh.yml     # root SSH key from ceph01 to all Ceph nodes (cephadm)
     └── roles/           # clone_identity, etc_hosts, ssh_client, netif_rename,
-                         # chrony, ceph_prereqs
+                         # chrony, sudo_nopasswd, ceph_prereqs
 ```
 
 ## Syncing the repo to the deploy VM
@@ -145,10 +145,11 @@ ansible-playbook playbooks/preconfig.yml -K   # node prep (idempotent)
 ansible all -m ping
 ```
 
-`preconfig.yml` runs in three tagged parts (`--tags hosts|netif|ntp`):
+`preconfig.yml` runs in four tagged parts (`--tags sudo|hosts|netif|ntp`):
 
 | Tag     | What it does |
 |---------|--------------|
+| `sudo`  | Drops `/etc/sudoers.d/opadm` (`NOPASSWD:ALL`, checked with `visudo`) on every node except the deploy VM. Kolla-Ansible's `bootstrap-servers` / `deploy` fail with "Missing sudo password" without it. |
 | `hosts` | On cloned VMs, regenerates `/etc/machine-id` and the SSH host keys (only on a host whose machine-id matches an earlier host's; also `--tags clone`). Sets hostnames and writes every node into `/etc/hosts` (`10.0.0.10 deployment deploy`, `10.0.0.20 controller`, …); drops the `127.0.1.1` line. On the deploy VM, trusts host keys by name and adds `~/.ssh/config`, so `ssh controller` works. |
 | `netif` | Renames NICs by MAC to `nat01` / `mgmt01` / `stor01` / `prov01` from [netplan/](netplan/README.md). Reboots nodes one at a time; reboot the deploy VM yourself afterwards. |
 | `ntp`   | Installs chrony. The deploy VM syncs from the internet and serves `10.0.0.0/24`, with `local stratum 10` as a fallback; every other node uses only `deployment`, so the nodes stay within Ceph's 0.05 s clock-skew limit. Time zone: UTC. |

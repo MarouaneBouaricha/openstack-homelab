@@ -1,0 +1,11 @@
+---
+- name: Passwordless sudo for {{ sudo_nopasswd_user }}
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/{{ sudo_nopasswd_user }}
+    content: |
+      # {{ ansible_managed }}
+      {{ sudo_nopasswd_user }} ALL=(ALL) NOPASSWD:ALL
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
