@@ -46,6 +46,7 @@ and docs; it is the source of truth for the lab.
     ├── preconfig.yml    # node prep: sudo, hosts, NIC names, time sync (tags below)
     ├── ceph-prereqs.yml # Ceph nodes: upgrade, Docker, cephadm (no cluster yet)
     ├── ceph-ssh.yml     # root SSH key from ceph01 to all Ceph nodes (cephadm)
+    ├── os-upgrade-noble.yml # controller + computes: Ubuntu 22.04 -> 24.04
     └── roles/           # clone_identity, etc_hosts, ssh_client, netif_rename,
                          # chrony, sudo_nopasswd, ceph_prereqs
 ```
@@ -150,6 +151,94 @@ When every node passes, add them from ceph01 (inside or outside `cephadm shell`)
 ceph orch host add ceph02 10.0.2.60
 ceph orch host add ceph03 10.0.2.70
 ceph orch host ls
+```
+
+## Kolla-Ansible release
+
+The lab deploys **OpenStack 2026.1 (Gazpacho)** with **kolla-ansible 22.x**.
+2024.1 no longer works: its images (`*-2024.1-ubuntu-jammy`) are gone from
+quay.io. Every release still published there (2025.1 → 2026.2) is built only
+for Ubuntu 24.04, and Kolla's prechecks accept only noble hosts, so the
+OpenStack nodes must move to 24.04 first. 2026.1 is the newest stable SLURP
+release; 2025.1 is at the end of its maintained phase (its images will go the
+same way as 2024.1's), and kolla-ansible 23 (2026.2) is still a release
+candidate on PyPI. The Ceph nodes stay on 22.04: OpenStack only talks to Ceph
+over the network.
+
+### 1. Upgrade controller, compute01, compute02 to Ubuntu 24.04
+
+```bash
+ansible-playbook playbooks/os-upgrade-noble.yml -K
+```
+
+| Tag        | What it does |
+|------------|--------------|
+| *(always)* | Preflight: refuses a node with containers or Docker volumes (run `kolla-ansible destroy` first), less than 6 GB free on `/`, or an OS other than jammy/noble. Nodes already on noble are skipped. |
+| `prepare`  | Backs up apt sources to `/root/noble-upgrade/`, moves `sources.list.d/original.list` into `/etc/apt/sources.list` (the upgrader only rewrites that file), purges the jammy `docker-ce` packages and repo, full jammy upgrade, reboot if required |
+| `upgrade`  | `do-release-upgrade -f DistUpgradeViewNonInteractive`, keeping local config files (netplan, chrony, sshd, sudoers); checks noble is installed, then reboots |
+| `verify`   | Noble running, `mgmt01`/`stor01`/`prov01` and their IPs present, chrony synced; removes leftovers and restarts the apt timers |
+
+One node at a time (controller first); the run stops at the first failure.
+Take a VMware snapshot of the three VMs before running it.
+
+### 2. kolla-ansible 22 on the deploy VM
+
+kolla-ansible 22 needs Python ≥ 3.11 (ansible-core 2.19/2.20); the deploy VM
+has 3.10. Build a second virtualenv with a standalone Python 3.12 from
+[uv](https://docs.astral.sh/uv/); the 2024.1 `~/venv` stays untouched.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv --python 3.12 ~/venv-2026.1
+source ~/venv-2026.1/bin/activate
+uv pip install 'kolla-ansible==22.*'
+kolla-ansible install-deps
+```
+
+### 3. Configuration for 2026.1
+
+`/etc/kolla/globals.yml`:
+
+```diff
+-workaround_ansible_issue_8743: yes             # gone in recent releases
+-openstack_release: "2024.1"
++openstack_release: "2026.1"
++kolla_internal_vip_address: "10.0.0.100"       # was missing: no VIP at all
+-kolla_external_vip_interface: "10.0.0.100"     # takes a NIC, not an IP; default = network_interface
++enable_cinder_backup: "no"                     # on by default; needs a `backups` pool + client.cinder-backup
+```
+
+Add the passwords of services new since 2024.1, keeping the existing ones:
+
+```bash
+cp /etc/kolla/passwords.yml /etc/kolla/passwords.yml.2024.1
+kolla-mergepwd --old /etc/kolla/passwords.yml.2024.1 \
+  --new ~/venv-2026.1/share/kolla-ansible/etc_examples/kolla/passwords.yml \
+  --final /etc/kolla/passwords.yml
+kolla-genpwd
+```
+
+The `ceph.conf` files under `/etc/kolla/config/` must not contain tabs (Kolla's
+config merge breaks on them, see step 7 of [ceph-setup.sh](ceph/ceph-setup.sh)):
+
+```bash
+sudo sed -i 's/\t/    /g' /etc/kolla/config/*/ceph.conf
+```
+
+`inventory/multinode` and `all-in-one` follow the 2026.1 samples (groups such as
+`kolla_logs`, `kolla_toolbox`, `nova-metadata`, `neutron-rpc-server` were
+renamed or added); only the host sections at the top are ours.
+
+### 4. Deploy
+
+```bash
+source ~/venv-2026.1/bin/activate
+cd ~/openstack-homelab
+kolla-ansible bootstrap-servers -i inventory/multinode   # Docker from the noble repo
+kolla-ansible prechecks -i inventory/multinode
+kolla-ansible pull -i inventory/multinode
+kolla-ansible deploy -i inventory/multinode
+kolla-ansible post-deploy -i inventory/multinode
 ```
 
 ## Adding a cloned VM

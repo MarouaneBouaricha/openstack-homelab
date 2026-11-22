@@ -1,0 +1,290 @@
+---
+# =============================================================================
+# Ubuntu 22.04 (jammy) -> 24.04 (noble) release upgrade of the OpenStack nodes
+# (controller, compute01, compute02). Kolla-Ansible 2025.1 and later only
+# support noble hosts, and the 2024.1 (jammy) images are gone from quay.io.
+#
+# One node at a time; the run stops at the first node that fails.
+#
+#   preflight  refuses to run on a node with Kolla/Docker containers or
+#              volumes, low disk space or a non-jammy/noble OS; a node
+#              already on noble is skipped
+#   prepare    full jammy upgrade (+ reboot if needed), purge the jammy
+#              Docker packages and repo (Kolla bootstrap-servers reinstalls
+#              them for noble), move the archive sources into
+#              /etc/apt/sources.list so the upgrader rewrites them
+#   upgrade    do-release-upgrade, non-interactive, keeping local config
+#              files (netplan, chrony, sshd, sudoers), then reboot
+#   verify     noble running, mgmt01/stor01/prov01 present, chrony synced
+#
+# Backups of every apt source it touches: /root/noble-upgrade/ on each node.
+#
+# Run from the repo root on the deploy VM (Ceph nodes are not touched):
+#   ansible-playbook playbooks/os-upgrade-noble.yml -K
+#   ansible-playbook playbooks/os-upgrade-noble.yml -K --limit compute02
+# Then bootstrap the nodes again with the new Kolla-Ansible release
+# (see "Kolla-Ansible release" in README.md).
+# =============================================================================
+- name: Upgrade OpenStack nodes to Ubuntu 24.04
+  hosts: openstack
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    noble_backup_dir: /root/noble-upgrade
+    noble_min_free_root_gb: 6
+    noble_docker_packages:
+      - docker-ce
+      - docker-ce-cli
+      - docker-ce-rootless-extras
+      - docker-buildx-plugin
+      - docker-compose-plugin
+      - containerd.io
+    noble_expected_interfaces: >-
+      {{ [mgmt_interface, storage_interface, provider_interface]
+         | select('string') | list }}
+
+  tasks:
+    # --- preflight ------------------------------------------------------------
+    - name: Preflight | supported OS
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_release in ['jammy', 'noble']
+        fail_msg: "{{ inventory_hostname }} runs {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}"
+      tags: [always]
+
+    - name: Preflight | skip nodes already on noble
+      ansible.builtin.meta: end_host
+      when: ansible_facts.distribution_release == 'noble'
+      tags: [always]
+
+    - name: Preflight | list containers and volumes
+      ansible.builtin.shell: |
+        command -v docker >/dev/null || exit 0
+        docker ps -aq
+        docker volume ls -q
+      register: noble_containers
+      changed_when: false
+      tags: [always]
+
+    - name: Preflight | no containers or volumes left by a Kolla deploy
+      ansible.builtin.assert:
+        that: noble_containers.stdout | trim | length == 0
+        fail_msg: >-
+          {{ inventory_hostname }} still has containers/volumes. Remove them
+          first (kolla-ansible destroy -i inventory/multinode
+          --yes-i-really-really-mean-it); this playbook purges Docker.
+      tags: [always]
+
+    - name: Preflight | free space on /
+      ansible.builtin.assert:
+        that: >-
+          (ansible_facts.mounts | selectattr('mount', 'equalto', '/') | first).size_available
+          > noble_min_free_root_gb * 1024 ** 3
+        fail_msg: "Less than {{ noble_min_free_root_gb }} GB free on / of {{ inventory_hostname }}"
+      tags: [always]
+
+    # --- prepare --------------------------------------------------------------
+    - name: Prepare | stop automatic apt runs (they hold the dpkg lock)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: [apt-daily.timer, apt-daily-upgrade.timer, unattended-upgrades.service]
+      failed_when: false
+      tags: [prepare]
+
+    - name: Prepare | backup directory
+      ansible.builtin.file:
+        path: "{{ noble_backup_dir }}"
+        state: directory
+        mode: "0700"
+      tags: [prepare]
+
+    - name: Prepare | back up apt sources
+      ansible.builtin.shell: |
+        cp -a /etc/apt/sources.list /etc/apt/sources.list.d "{{ noble_backup_dir }}/" 2>/dev/null
+        true
+      args:
+        creates: "{{ noble_backup_dir }}/sources.list.d"
+      tags: [prepare]
+
+    # The archive sources live in sources.list.d/original.list and
+    # /etc/apt/sources.list is empty. do-release-upgrade only rewrites the
+    # official sources it finds in sources.list, so put them back there.
+    - name: Prepare | read /etc/apt/sources.list
+      ansible.builtin.command: grep -cE '^\s*deb\s' /etc/apt/sources.list
+      register: noble_sources_list
+      changed_when: false
+      failed_when: false
+      tags: [prepare]
+
+    - name: Prepare | check for sources.list.d/original.list
+      ansible.builtin.stat:
+        path: /etc/apt/sources.list.d/original.list
+      register: noble_original_list
+      tags: [prepare]
+
+    - name: Prepare | move original.list into /etc/apt/sources.list
+      ansible.builtin.shell: |
+        cp /etc/apt/sources.list.d/original.list /etc/apt/sources.list
+        rm /etc/apt/sources.list.d/original.list
+      when:
+        - noble_original_list.stat.exists
+        - (noble_sources_list.stdout | default('0') | int) == 0
+      tags: [prepare]
+
+    - name: Prepare | drop the duplicate original.list
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/original.list
+        state: absent
+      when: noble_original_list.stat.exists
+      tags: [prepare]
+
+    # Kolla bootstrap-servers installed docker-ce from the jammy repo. Remove
+    # it now; bootstrap-servers of the new release installs noble packages.
+    - name: Prepare | purge Docker packages (no containers, checked above)
+      ansible.builtin.apt:
+        name: "{{ noble_docker_packages }}"
+        state: absent
+        purge: true
+      tags: [prepare]
+
+    - name: Prepare | remove the jammy Docker repo
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/docker.sources
+        state: absent
+      tags: [prepare]
+
+    - name: Prepare | full upgrade on jammy
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        autoremove: true
+        autoclean: true
+        dpkg_options: force-confdef,force-confold
+      tags: [prepare]
+
+    - name: Prepare | check whether a reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: noble_reboot_required
+      tags: [prepare]
+
+    - name: Prepare | reboot into the latest jammy kernel
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+        msg: "Reboot before release upgrade (os-upgrade-noble)"
+      when: noble_reboot_required.stat.exists
+      tags: [prepare]
+
+    - name: Prepare | install the release upgrader
+      ansible.builtin.apt:
+        name: [ubuntu-release-upgrader-core, update-manager-core]
+        state: present
+      tags: [prepare]
+
+    - name: Prepare | upgrade to LTS releases only
+      ansible.builtin.lineinfile:
+        path: /etc/update-manager/release-upgrades
+        regexp: '^Prompt='
+        line: Prompt=lts
+      tags: [prepare]
+
+    # Keep the local version of every config file the upgrade would prompt
+    # for (chrony.conf, sshd drop-ins, sudoers, netplan).
+    - name: Prepare | keep local config files during the upgrade
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/90noble-upgrade-confold
+        mode: "0644"
+        content: |
+          Dpkg::Options {
+            "--force-confdef";
+            "--force-confold";
+          };
+      tags: [prepare]
+
+    # --- upgrade --------------------------------------------------------------
+    - name: Upgrade | do-release-upgrade to noble (20-40 min)
+      ansible.builtin.command: do-release-upgrade -f DistUpgradeViewNonInteractive
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      async: 5400
+      poll: 30
+      register: noble_upgrade
+      changed_when: true
+      tags: [upgrade]
+
+    - name: Upgrade | read the installed release
+      ansible.builtin.command: grep -oP '^VERSION_CODENAME=\K.*' /etc/os-release
+      register: noble_codename
+      changed_when: false
+      tags: [upgrade]
+
+    - name: Upgrade | the upgrade really installed noble
+      ansible.builtin.assert:
+        that: noble_codename.stdout == 'noble'
+        fail_msg: >-
+          Still {{ noble_codename.stdout }} on {{ inventory_hostname }}. See
+          /var/log/dist-upgrade/main.log and apt.log there. Output tail:
+          {{ noble_upgrade.stdout_lines | default([]) | last }}
+      tags: [upgrade]
+
+    - name: Upgrade | reboot into noble
+      ansible.builtin.reboot:
+        reboot_timeout: 1200
+        msg: "Reboot into Ubuntu 24.04 (os-upgrade-noble)"
+      tags: [upgrade]
+
+    # --- verify ---------------------------------------------------------------
+    - name: Verify | gather facts again
+      ansible.builtin.setup:
+      tags: [verify]
+
+    - name: Verify | Ubuntu 24.04 with the renamed NICs
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution_release == 'noble'
+          - noble_expected_interfaces | difference(ansible_facts.interfaces) | length == 0
+        fail_msg: >-
+          {{ ansible_facts.distribution_release }}; missing NICs:
+          {{ noble_expected_interfaces | difference(ansible_facts.interfaces) }}
+      tags: [verify]
+
+    - name: Verify | management and storage IPs are up
+      ansible.builtin.assert:
+        that:
+          - mgmt_ip in ansible_facts.all_ipv4_addresses
+          - storage_ip is not defined or storage_ip in ansible_facts.all_ipv4_addresses
+      tags: [verify]
+
+    - name: Verify | chrony follows the deploy VM
+      ansible.builtin.command: chronyc -n tracking
+      register: noble_chrony
+      changed_when: false
+      failed_when: "'Not synchronised' in noble_chrony.stdout or noble_chrony.rc != 0"
+      retries: 6
+      delay: 10
+      until: noble_chrony is not failed
+      tags: [verify]
+
+    - name: Verify | remove the temporary dpkg option file
+      ansible.builtin.file:
+        path: /etc/apt/apt.conf.d/90noble-upgrade-confold
+        state: absent
+      tags: [verify]
+
+    - name: Verify | remove packages left over from jammy
+      ansible.builtin.apt:
+        update_cache: true
+        autoremove: true
+        purge: true
+      tags: [verify]
+
+    - name: Verify | start the automatic apt timers again
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop: [apt-daily.timer, apt-daily-upgrade.timer]
+      failed_when: false
+      tags: [verify]
