@@ -6,66 +6,7 @@ and docs; it is the source of truth for the lab.
 
 ## Architecture
 
-```mermaid
----
-config:
-  look: handDrawn
-  theme: neutral
----
-flowchart TB
-    admin(["👤 Admin / Workstation"])
-    internet(("🌐 Internet<br/>VMware NAT"))
-
-    subgraph MGMT["① Management Network — 10.0.0.0/24"]
-        direction LR
-        deploy["🛠️ <b>deploy</b><br/>10.0.0.10<br/><i>kolla-ansible</i>"]
-        vip(("VIP<br/>10.0.0.100"))
-        controller["🧠 <b>controller</b><br/>10.0.0.20<br/><i>control · network · monitoring</i>"]
-        compute01["⚙️ <b>compute01</b><br/>10.0.0.30<br/><i>nova-compute</i>"]
-        compute02["⚙️ <b>compute02</b><br/>10.0.0.40<br/><i>nova-compute</i>"]
-        ceph01["💾 <b>ceph01</b><br/>10.0.0.50<br/><i>mon · mgr · osd</i>"]
-        ceph02["💾 <b>ceph02</b><br/>10.0.0.60<br/><i>mon · mgr · osd</i>"]
-        ceph03["💾 <b>ceph03</b><br/>10.0.0.70<br/><i>mon · osd</i>"]
-    end
-
-    subgraph PROVIDER["② Provider Network — no IP (Neutron external)"]
-        direction LR
-        p_ctl["controller<br/>prov01"]
-        p_c1["compute01<br/>prov01"]
-        p_c2["compute02<br/>prov01"]
-    end
-
-    subgraph STORAGE["③ Storage Network — 10.0.2.0/24 (Ceph)"]
-        direction LR
-        s_ctl["controller<br/>10.0.2.20"]
-        s_c1["compute01<br/>10.0.2.30"]
-        s_c2["compute02<br/>10.0.2.40"]
-        s_ceph01["ceph01<br/>10.0.2.50"]
-        s_ceph02["ceph02<br/>10.0.2.60"]
-        s_ceph03["ceph03<br/>10.0.2.70"]
-    end
-
-    admin -- "SSH / Horizon" --> vip
-    deploy -. "ansible over SSH" .-> controller & compute01 & compute02 & ceph01 & ceph02 & ceph03
-    vip -. "keepalived" .- controller
-
-    controller --- p_ctl
-    compute01 --- p_c1
-    compute02 --- p_c2
-
-    controller --- s_ctl
-    compute01 --- s_c1
-    compute02 --- s_c2
-    ceph01 --- s_ceph01
-    ceph02 --- s_ceph02
-    ceph03 --- s_ceph03
-    s_ctl & s_c1 & s_c2 == "RBD" ==> s_ceph01 & s_ceph02 & s_ceph03
-
-    MGMT -. "nat01 · DHCP" .-> internet
-
-    classDef vipStyle stroke:#e03131,color:#e03131,stroke-width:2px
-    class vip vipStyle
-```
+![Architecture: 7 VMs on the management, provider and storage networks](docs/architecture.png)
 
 ## Hosts
 
@@ -95,6 +36,7 @@ flowchart TB
 .
 ├── ansible.cfg          # points at inventory/hosts.yml
 ├── ceph/                # Ceph cluster runbook (cephadm bootstrap → pools/users)
+├── docs/                # architecture diagram
 ├── inventory/
 │   ├── hosts.yml        # all VMs by name, grouped by role (mgmt_ip / storage_ip)
 │   ├── group_vars/      # shared vars (networks, interfaces, VIP)
