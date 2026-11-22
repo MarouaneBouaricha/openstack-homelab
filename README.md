@@ -174,7 +174,7 @@ ansible-playbook playbooks/os-upgrade-noble.yml -K
 | Tag        | What it does |
 |------------|--------------|
 | *(always)* | Preflight: refuses a node with containers or Docker volumes (run `kolla-ansible destroy` first), less than 6 GB free on `/`, or an OS other than jammy/noble. Nodes already on noble are skipped. |
-| `prepare`  | Backs up apt sources to `/root/noble-upgrade/`, moves `sources.list.d/original.list` into `/etc/apt/sources.list` (the upgrader only rewrites that file), purges the jammy `docker-ce` packages and repo, full jammy upgrade, reboot if required |
+| `prepare`  | Backs up apt sources to `/root/noble-upgrade/`, moves `sources.list.d/original.list` into `/etc/apt/sources.list` (the upgrader only rewrites that file), purges the jammy `docker-ce` packages, repo and `/etc/docker` (a leftover `daemon.json` would leave Docker masked after Kolla reinstalls it), full jammy upgrade, reboot if required |
 | `upgrade`  | `do-release-upgrade -f DistUpgradeViewNonInteractive`, keeping local config files (netplan, chrony, sshd, sudoers); checks noble is installed, then reboots |
 | `verify`   | Noble running, `mgmt01`/`stor01`/`prov01` and their IPs present, chrony synced; removes leftovers and restarts the apt timers |
 
@@ -206,6 +206,7 @@ kolla-ansible install-deps
 +kolla_internal_vip_address: "10.0.0.100"       # was missing: no VIP at all
 -kolla_external_vip_interface: "10.0.0.100"     # takes a NIC, not an IP; default = network_interface
 +enable_cinder_backup: "no"                     # on by default; needs a `backups` pool + client.cinder-backup
++kolla_test_images: "yes"                       # allow quay.io/openstack.kolla images (= --use-test-images)
 ```
 
 Add the passwords of services new since 2024.1, keeping the existing ones:
@@ -227,7 +228,9 @@ sudo sed -i 's/\t/    /g' /etc/kolla/config/*/ceph.conf
 
 `inventory/multinode` and `all-in-one` follow the 2026.1 samples (groups such as
 `kolla_logs`, `kolla_toolbox`, `nova-metadata`, `neutron-rpc-server` were
-renamed or added); only the host sections at the top are ours.
+renamed or added); only the host sections at the top are ours. The deploy VM
+(`localhost`) has `prechecks_enable_host_os_checks=false`: it stays on 22.04 and
+runs no containers, while the prechecks accept only 24.04.
 
 ### 4. Deploy
 

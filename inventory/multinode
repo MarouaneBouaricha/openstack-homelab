@@ -28,7 +28,9 @@ controller
 controller
 
 [deployment]
-localhost       ansible_connection=local
+# The deploy VM (Ubuntu 22.04) only runs kolla-ansible, no containers:
+# skip the precheck that requires Ubuntu 24.04 on it.
+localhost       ansible_connection=local prechecks_enable_host_os_checks=false
 
 [baremetal:children]
 control

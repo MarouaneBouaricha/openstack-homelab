@@ -10,8 +10,8 @@
 #              volumes, low disk space or a non-jammy/noble OS; a node
 #              already on noble is skipped
 #   prepare    full jammy upgrade (+ reboot if needed), purge the jammy
-#              Docker packages and repo (Kolla bootstrap-servers reinstalls
-#              them for noble), move the archive sources into
+#              Docker packages, repo and /etc/docker (Kolla bootstrap-servers
+#              reinstalls them for noble), move the archive sources into
 #              /etc/apt/sources.list so the upgrader rewrites them
 #   upgrade    do-release-upgrade, non-interactive, keeping local config
 #              files (netplan, chrony, sshd, sudoers), then reboot
@@ -154,6 +154,19 @@
       ansible.builtin.file:
         path: /etc/apt/sources.list.d/docker.sources
         state: absent
+      tags: [prepare]
+
+    # Purging docker-ce keeps /etc/docker/daemon.json. Kolla's docker role
+    # masks docker.service before installing and only unmasks/starts it from
+    # the handler notified by a *changed* daemon.json: a leftover identical
+    # file leaves Docker masked and bootstrap-servers fails on `docker info`.
+    - name: Prepare | remove leftover Docker config and unit mask
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/docker
+        - /etc/systemd/system/docker.service
       tags: [prepare]
 
     - name: Prepare | full upgrade on jammy
