@@ -35,18 +35,19 @@ apt update
 apt install -y cephadm ceph-common
 cephadm version
 
-lsblk     # the OSD disks (nvme1n1, nvme2n1) must be empty: no partitions, no LVM
+lsblk     # the OSD disks (here sdb, sdc) must be empty: no partitions, no LVM
 
 # -----------------------------------------------------------------------------
 # 1. Bootstrap the cluster — ceph01
 # -----------------------------------------------------------------------------
 # First MON + MGR on ceph01. Public and cluster traffic both on the storage
 # network (10.0.2.0/24). Dashboard: https://ceph01:8443 (admin / below).
+# Pick your own dashboard password; never commit it.
 cephadm bootstrap \
     --mon-ip 10.0.2.50 \
     --cluster-network 10.0.2.0/24 \
     --initial-dashboard-user admin \
-    --initial-dashboard-password 'opensesame!@#' \
+    --initial-dashboard-password '<dashboard-password>' \
     --dashboard-password-noupdate \
     --allow-fqdn-hostname
 
@@ -86,13 +87,13 @@ ceph orch device ls        # disks must show AVAILABLE = Yes
 # Option A — every empty disk on every host, now and in the future
 ceph orch apply osd --all-available-devices
 
-# Option B — explicit disks, 2 per node
-ceph orch daemon add osd ceph01:/dev/nvme1n1
-ceph orch daemon add osd ceph01:/dev/nvme2n1
-ceph orch daemon add osd ceph02:/dev/nvme1n1
-ceph orch daemon add osd ceph02:/dev/nvme2n1
-ceph orch daemon add osd ceph03:/dev/nvme1n1
-ceph orch daemon add osd ceph03:/dev/nvme2n1
+# Option B — explicit disks, 2 per node (check names with lsblk on each node)
+ceph orch daemon add osd ceph01:/dev/sdb
+ceph orch daemon add osd ceph01:/dev/sdc
+ceph orch daemon add osd ceph02:/dev/sdb
+ceph orch daemon add osd ceph02:/dev/sdc
+ceph orch daemon add osd ceph03:/dev/sdb
+ceph orch daemon add osd ceph03:/dev/sdc
 
 ceph osd tree && ceph -s && ceph df
 

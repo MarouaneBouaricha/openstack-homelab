@@ -1,0 +1,15 @@
+# Secrets: never commit Kolla passwords or Ceph keyrings
+passwords.yml
+*.keyring
+admin-openrc.sh
+*-openrc.sh
+
+# Ansible
+*.retry
+
+# Local leftovers
+*.bak
+*.old
+
+# Local AI assistant notes (not part of the project)
+CLAUDE.md

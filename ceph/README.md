@@ -6,17 +6,17 @@ Cinder and Nova. The step-by-step commands are in
 the whole file exits right away).
 
 | Host   | Storage IP (③) | Daemons             | OSD disks                   |
-|--------|----------------|---------------------|-----------------------------|
-| ceph01 | 10.0.2.50      | mon · mgr · osd     | `/dev/nvme1n1`, `/dev/nvme2n1` |
-| ceph02 | 10.0.2.60      | mon · mgr · osd     | `/dev/nvme1n1`, `/dev/nvme2n1` |
-| ceph03 | 10.0.2.70      | mon · osd           | `/dev/nvme1n1`, `/dev/nvme2n1` |
+|--------|----------------|---------------------|--------------------------------------|
+| ceph01 | 10.0.2.50      | mon · mgr · osd     | `/dev/sdb`, `/dev/sdc` (100 GB each) |
+| ceph02 | 10.0.2.60      | mon · mgr · osd     | `/dev/sdb`, `/dev/sdc` (100 GB each) |
+| ceph03 | 10.0.2.70      | mon · osd           | `/dev/sdb`, `/dev/sdc` (100 GB each) |
 
 - **Release:** squid (19.2), from download.ceph.com (`ceph_release` in
   [ceph-prereqs](../playbooks/roles/ceph_prereqs/defaults/main.yml)).
 - **Networks:** public and cluster traffic both on the storage network
   `10.0.2.0/24` (`--mon-ip 10.0.2.50 --cluster-network 10.0.2.0/24`).
-- **Dashboard:** `https://ceph01:8443`, user `admin`, password
-  `opensesame!@#` (lab only).
+- **Dashboard:** `https://ceph01:8443`, user `admin`, password set at
+  bootstrap (runbook step 1).
 - **Admin node:** ceph01 holds `/etc/ceph/ceph.conf` and the admin keyring, so
   `ceph` / `rbd` work there as root without `cephadm shell`.
 
@@ -67,15 +67,6 @@ ceph osd pool autoscale-status
 
 ## Next: hand the cluster to Kolla-Ansible
 
-Copy from ceph01 to the deploy VM, into Kolla's config overrides:
-
-| File on ceph01 | Under `/etc/kolla/config/` on the deploy VM |
-|----------------|---------------------------------------------|
-| `/tmp/ceph.conf` | `glance/`, `cinder/`, `nova/` (as `ceph.conf`) |
-| `/etc/ceph/ceph.client.glance.keyring` | `glance/` |
-| `/etc/ceph/ceph.client.cinder.keyring` | `cinder/cinder-volume/`, `nova/` |
-
-Then enable the Ceph backends in `globals.yml` (`glance_backend_ceph`,
-`cinder_backend_ceph`, `nova_backend_ceph`). Check the exact paths against the
-[Kolla-Ansible external Ceph guide](https://docs.openstack.org/kolla-ansible/latest/reference/storage/external-ceph-guide.html)
-for the release in use.
+Copy `/tmp/ceph.conf` and the `glance` / `cinder` keyrings from ceph01 to
+`/etc/kolla/config/` on the deploy VM, as listed in
+[kolla/README.md](../kolla/README.md#2-etckolla).
