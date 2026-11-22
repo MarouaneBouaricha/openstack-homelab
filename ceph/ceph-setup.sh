@@ -148,9 +148,11 @@ ceph auth ls | grep client.
 # 7. Client config for Kolla-Ansible — ceph01
 # -----------------------------------------------------------------------------
 # Minimal ceph.conf (fsid + mon addresses) for the OpenStack services.
-# Kolla's config merge breaks on tab-indented lines, so tabs become spaces.
+# Kolla merges it with Python's INI parser, which reads ANY indented line
+# (tabs or spaces) as a continuation of the previous one
+# ("Unexpected continuation line"): strip the indentation.
 ceph config generate-minimal-conf > /tmp/ceph.conf
-sed -i 's/\t/    /g' /tmp/ceph.conf
+sed -i 's/^[[:space:]]\+//' /tmp/ceph.conf
 ceph fsid
 # Next: copy /tmp/ceph.conf and the glance/cinder keyrings to the deploy VM,
 # under /etc/kolla/config/ (see ceph/README.md).

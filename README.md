@@ -219,11 +219,13 @@ kolla-mergepwd --old /etc/kolla/passwords.yml.2024.1 \
 kolla-genpwd
 ```
 
-The `ceph.conf` files under `/etc/kolla/config/` must not contain tabs (Kolla's
-config merge breaks on them, see step 7 of [ceph-setup.sh](ceph/ceph-setup.sh)):
+The `ceph.conf` files under `/etc/kolla/config/` must have no indented lines,
+neither tabs nor spaces: Kolla merges them with Python's INI parser, which
+reads an indented line as a continuation and fails with "Unexpected
+continuation line" (see step 7 of [ceph-setup.sh](ceph/ceph-setup.sh)):
 
 ```bash
-sudo sed -i 's/\t/    /g' /etc/kolla/config/*/ceph.conf
+sed -i 's/^[[:space:]]\+//' /etc/kolla/config/*/ceph.conf
 ```
 
 `inventory/multinode` and `all-in-one` follow the 2026.1 samples (groups such as
