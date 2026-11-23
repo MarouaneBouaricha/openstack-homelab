@@ -1,0 +1,16 @@
+---
+# `cephadm bootstrap` on the admin node. Skipped when the node already has
+# /etc/ceph/ceph.conf and the admin keyring (cluster exists).
+
+# First MON on the storage network; public and cluster traffic both there
+ceph_bootstrap_mon_ip: "{{ storage_ip }}"
+ceph_bootstrap_cluster_network: "{{ storage_network }}"
+
+# Dashboard login. Pass the password on the command line or from a vault:
+#   -e ceph_dashboard_password='...'
+# Without it, cephadm generates one (printed at the end of the bootstrap) and
+# asks for a new one at first login.
+ceph_dashboard_user: admin
+ceph_dashboard_password: ""
+
+ceph_bootstrap_extra_args: [--allow-fqdn-hostname]

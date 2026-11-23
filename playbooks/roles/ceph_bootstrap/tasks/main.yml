@@ -1,0 +1,55 @@
+---
+- name: Bootstrap | look for an existing cluster
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  loop:
+    - /etc/ceph/ceph.conf
+    - /etc/ceph/ceph.client.admin.keyring
+  register: ceph_bootstrap_files
+
+- name: Bootstrap | cluster already exists
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} already has /etc/ceph/ceph.conf and the admin keyring: bootstrap skipped"
+  when: ceph_bootstrap_files.results | map(attribute='stat.exists') | min
+
+- name: Bootstrap | new cluster
+  when: not (ceph_bootstrap_files.results | map(attribute='stat.exists') | min)
+  block:
+    - name: Bootstrap | cephadm is installed (playbooks/ceph-prereqs.yml)
+      ansible.builtin.command: cephadm version
+      changed_when: false
+      check_mode: false
+
+    # Output holds the generated dashboard password: no_log, shown below
+    - name: Bootstrap | cephadm bootstrap (first MON + MGR, dashboard)
+      ansible.builtin.command:
+        argv: >-
+          {{ ['cephadm', 'bootstrap',
+              '--mon-ip', ceph_bootstrap_mon_ip,
+              '--cluster-network', ceph_bootstrap_cluster_network,
+              '--initial-dashboard-user', ceph_dashboard_user]
+             + (['--initial-dashboard-password', ceph_dashboard_password, '--dashboard-password-noupdate']
+                if ceph_dashboard_password | length > 0 else [])
+             + ceph_bootstrap_extra_args }}
+      register: ceph_bootstrap_run
+      changed_when: true
+      no_log: true
+
+    - name: Bootstrap | dashboard login
+      ansible.builtin.debug:
+        msg: >-
+          {{ ceph_bootstrap_run.stdout_lines | default([])
+             | select('search', '(URL|User|Password):') | list
+             if ceph_dashboard_password | length == 0
+             else 'Dashboard user ' ~ ceph_dashboard_user ~ ', password from ceph_dashboard_password' }}
+      when: not ansible_check_mode
+
+    - name: Bootstrap | wait for the cluster to answer
+      ansible.builtin.command: ceph -s
+      register: ceph_bootstrap_status
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: ceph_bootstrap_status.rc == 0
+      when: not ansible_check_mode

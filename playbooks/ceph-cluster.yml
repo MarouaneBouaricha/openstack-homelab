@@ -1,0 +1,44 @@
+---
+# =============================================================================
+# Ceph cluster build and convergence with cephadm (replaces ceph/ceph-setup.sh)
+# Run after preconfig.yml and ceph-prereqs.yml. Safe to re-run on the live
+# cluster: every step checks the current state first.
+#
+#   bootstrap  `cephadm bootstrap` on the admin node (ceph01): first MON + MGR,
+#              dashboard; skipped if /etc/ceph/ceph.conf + admin keyring exist
+#   sshd, authkey, check
+#              cephadm's SSH key for root on every Ceph node (ceph-ssh.yml)
+#   specs      renders /etc/ceph/cluster-spec.yml from the inventory (hosts by
+#              storage IP with their ceph_labels, MONs, MGRs, OSDs on every
+#              empty disk) and `ceph orch apply`s it when it changed, after
+#              saving `ceph orch ls --export` to /root/ceph-backups/; then
+#              waits for ceph_osd_expected OSDs
+#   pools, users, clients
+#              RBD pools, CephX users, Kolla keyrings and ceph.conf check
+#              (ceph-pools.yml)
+#
+# Run from the repo root on the deploy VM:
+#   ansible-playbook playbooks/ceph-cluster.yml --check --diff     # preview
+#   ansible-playbook playbooks/ceph-cluster.yml -e ceph_dashboard_password='...'
+#   ansible-playbook playbooks/ceph-cluster.yml --tags specs       # after an inventory change
+# No -K: sudo is passwordless on the Ceph nodes (preconfig.yml, sudo tag).
+# =============================================================================
+- name: Ceph cluster | bootstrap
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  tags: [bootstrap]
+  roles: [ceph_bootstrap]
+
+- name: Ceph cluster | cephadm SSH access
+  ansible.builtin.import_playbook: ceph-ssh.yml
+
+- name: Ceph cluster | hosts, MONs, MGRs, OSDs
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  tags: [specs]
+  roles: [ceph_specs]
+
+- name: Ceph cluster | pools, users, Kolla client files
+  ansible.builtin.import_playbook: ceph-pools.yml

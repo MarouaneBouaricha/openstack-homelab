@@ -10,6 +10,15 @@
 # Every `ceph ...` / `rbd ...` command below works directly on ceph01 as root
 # (ceph-common is installed and bootstrap wrote /etc/ceph/ceph.conf plus the
 # admin keyring), or inside `cephadm shell`.
+#
+# REFERENCE ONLY: the playbooks automate every step (see ceph/README.md):
+#   step 0     playbooks/ceph-prereqs.yml
+#   step 1     playbooks/ceph-cluster.yml --tags bootstrap
+#   step 2     playbooks/ceph-cluster.yml --tags sshd,authkey,check (ceph-ssh.yml)
+#   steps 3-4  playbooks/ceph-cluster.yml --tags specs (OSDs: option A)
+#   steps 5-7  playbooks/ceph-pools.yml (tags pools, users, clients)
+# The values they use live in inventory/hosts.yml and
+# inventory/group_vars/ceph_nodes.yml, not here.
 # =============================================================================
 echo "ceph/ceph-setup.sh is a runbook: copy the steps one at a time (see ceph/README.md)." >&2
 exit 1
