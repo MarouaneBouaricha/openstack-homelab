@@ -38,7 +38,7 @@ Use the same loop for every change:
 
 ```
 workstation: edit → git commit → git push   (this also updates the repo on the deploy VM)
-deploy VM:   kolla-config.yml → prechecks → pull → deploy/reconfigure (--limit/--tags) 2>&1 | tee log → verify
+deploy VM:   health.yml → kolla-config.yml → prechecks → pull → deploy/reconfigure (--limit/--tags) 2>&1 | tee log → health.yml
 ```
 
 `/etc/kolla` is only ever written from the repo, by
@@ -55,15 +55,18 @@ Never edit `/etc/kolla/globals.yml` or the overrides on the deploy VM: the next
 sync overwrites them. Secrets (`passwords.yml`, keyrings) are the exception;
 they stay outside the repo. Details in [README.md](README.md#2-etckolla).
 
-Verify the same way every time:
+Verify the same way every time, before the change and after it, with the
+read-only health check (repo venv). It covers every node, Ceph, the Kolla
+containers and the OpenStack services, and fails if any check fails:
 
 ```bash
-source /etc/kolla/admin-openrc.sh
-openstack compute service list ; openstack network agent list ; openstack volume service list
-openstack hypervisor list
-ssh controller "sudo docker ps --filter health=unhealthy"   # and on each compute
-ssh ceph01 "sudo ceph -s"
+source ~/venv/bin/activate
+ansible-playbook playbooks/health.yml                  # or --tags nodes|ceph|openstack
 ```
+
+For details: `source /etc/kolla/admin-openrc.sh`, then
+`openstack compute service list`, `openstack network agent list`,
+`openstack volume service list`, `openstack hypervisor list`.
 
 ## Add a compute node
 

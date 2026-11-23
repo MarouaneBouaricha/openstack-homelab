@@ -6,7 +6,7 @@ deploy VM, on top of the external Ceph cluster built in [../ceph](../ceph/README
 | File here | Goes to (deploy VM) | What it is |
 |-----------|---------------------|------------|
 | [globals.yml](globals.yml) | `/etc/kolla/globals.yml` | The lab's Kolla configuration (VIP, interfaces, Ceph backends, enabled services) |
-| [config/ceph.conf](config/ceph.conf) | `/etc/kolla/config/{glance,cinder,nova}/ceph.conf` | Minimal Ceph client config (fsid + MONs) of *this* lab's cluster; generate your own (Ceph runbook step 7) |
+| [config/ceph.conf](config/ceph.conf) | `/etc/kolla/config/{glance,cinder,nova}/ceph.conf` | Minimal Ceph client config (fsid + MONs) of *this* lab's cluster; checked against the cluster by `ceph-pools.yml --tags clients` |
 | [../inventory/multinode](../inventory/multinode) | used in place | Kolla inventory: controller = control/network/monitoring/storage, compute01/02 = compute |
 
 `passwords.yml` and the Ceph keyrings are secrets and are **not** in the repo.
@@ -23,7 +23,7 @@ changes, upgrades, backups, power off/on) is covered in
 - Python **≥ 3.11** on the deploy VM (ansible-core 2.19/2.20).
 - Passwordless sudo for the Ansible user on every node
   (`ansible-playbook playbooks/preconfig.yml -K --tags sudo`).
-- The Ceph pools and users from the Ceph runbook (steps 5-7).
+- The Ceph pools and users (`playbooks/ceph-cluster.yml`, see [ceph/README.md](../ceph/README.md)).
 
 ## 1. kolla-ansible on the deploy VM
 
@@ -81,13 +81,14 @@ Settings in `globals.yml` that matter for this lab:
 | `ceph_nova_user` | `cinder` | Nova reuses `client.cinder` (no separate Nova user) |
 | `enable_cinder_backup` | `no` | On by default; would need a `backups` pool and `client.cinder-backup` |
 
-Ceph client files, from ceph01 (Ceph runbook steps 6-7):
+Ceph client files, once `/etc/kolla` exists
+(`ansible-playbook playbooks/ceph-pools.yml --tags clients`, repo venv):
 
-| File on ceph01 | Goes to |
-|----------------|---------|
-| `/tmp/ceph.conf` | the repo, as `kolla/config/ceph.conf` (commit it; `kolla-config.yml` copies it) |
-| `/etc/ceph/ceph.client.glance.keyring` | `/etc/kolla/config/glance/`, by hand (secret) |
-| `/etc/ceph/ceph.client.cinder.keyring` | `/etc/kolla/config/cinder/cinder-volume/` and `/etc/kolla/config/nova/`, by hand (secret) |
+| File | Goes to |
+|------|---------|
+| Minimal `ceph.conf` (`ceph config generate-minimal-conf`) | the repo, as `kolla/config/ceph.conf`. The `clients` tag fails and prints the lines when the file doesn't match the cluster; commit them, and `kolla-config.yml` copies the file |
+| `client.glance` keyring | `/etc/kolla/config/glance/ceph.client.glance.keyring`, written by the `clients` tag (secret, mode 0600) |
+| `client.cinder` keyring | `/etc/kolla/config/cinder/cinder-volume/` and `/etc/kolla/config/nova/`, written by the `clients` tag |
 
 `ceph.conf` must have **no indented lines** (see Troubleshooting); the
 playbook refuses to copy one that has.

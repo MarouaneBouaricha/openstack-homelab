@@ -5,7 +5,7 @@ A multi-node **OpenStack 2026.1** cloud deployed with
 VMs, with a 3-node **Ceph** cluster (cephadm) as the storage backend for images,
 volumes and VM disks. Everything needed to rebuild it is in this repo: the
 Ansible playbooks that prepare the nodes, per-VM network config, the Ceph
-runbook and the Kolla configuration.
+playbooks and the Kolla configuration.
 
 ![Architecture: 7 VMs on the management, provider and storage networks](docs/architecture.png)
 
@@ -59,8 +59,8 @@ are the same on every VM.
 │   ├── host_vars/
 │   └── multinode          # Kolla-Ansible's inventory (2026.1 layout)
 ├── netplan/               # per-VM network config, matched by MAC
-├── playbooks/             # node preparation, Ceph prerequisites, OS upgrade
-├── ceph/                  # Ceph cluster runbook (cephadm)
+├── playbooks/             # node prep, Ceph build/pools, Kolla config sync, health check, OS upgrade
+├── ceph/                  # Ceph build and Day 2 guides (cephadm), manual runbook for reference
 ├── kolla/                 # globals.yml, Ceph client config, deploy guide, Day 2 operations
 └── docs/                  # architecture diagram
 ```
@@ -77,8 +77,8 @@ Everything runs from the **deploy VM**, in a clone of this repo
 | Ansible user (here `opadm`, same account on every VM) | `inventory/group_vars/all.yml` (`ansible_user`), `inventory/multinode` |
 | IP addresses, VIP | `inventory/hosts.yml`, `inventory/group_vars/all.yml`, `inventory/multinode`, `kolla/globals.yml`, `netplan/*.yaml` |
 | MAC address of every NIC | `netplan/<host>.yaml` (from each VM's `.vmx`: `ethernet0.address`, `ethernetN.generatedAddress`) |
-| Ceph OSD disks (here `/dev/sdb`, `/dev/sdc`) | `ceph/ceph-setup.sh` step 4 |
-| Ceph dashboard password | `ceph/ceph-setup.sh` step 1 |
+| Ceph hosts, labels, OSD policy, pools, users | `inventory/hosts.yml` (`ceph_labels`), `inventory/group_vars/ceph_nodes.yml` (every empty disk becomes an OSD) |
+| Ceph dashboard password | `-e ceph_dashboard_password=...` on `ceph-cluster.yml` (never committed) |
 
 ### 1. Create the VMs
 
@@ -117,10 +117,13 @@ password (not needed once the `sudo` tag has run).
 
 ```bash
 ansible-playbook playbooks/ceph-prereqs.yml -K    # upgrade, Docker, cephadm
+ansible-playbook playbooks/ceph-cluster.yml -e ceph_dashboard_password='<dashboard-password>'
 ```
 
-then follow [ceph/README.md](ceph/README.md): bootstrap on ceph01,
-`playbooks/ceph-ssh.yml` for cephadm's root SSH key, hosts, OSDs, pools, users.
+`ceph-cluster.yml` bootstraps ceph01, distributes cephadm's root SSH key
+(`ceph-ssh.yml`), applies the hosts, MONs, MGRs and OSDs from the inventory,
+then creates the pools and users (`ceph-pools.yml`). Its tags are described in
+[ceph/README.md](ceph/README.md).
 
 | `ceph-prereqs.yml` tag | What it does |
 |-----------|--------------|
@@ -133,7 +136,7 @@ then follow [ceph/README.md](ceph/README.md): bootstrap on ceph01,
 
 Follow [kolla/README.md](kolla/README.md): kolla-ansible in a Python 3.12
 virtualenv, `/etc/kolla` synced from `kolla/` by `playbooks/kolla-config.yml`,
-the Ceph keyrings, then
+the Ceph keyrings (`ceph-pools.yml --tags clients`), then
 `bootstrap-servers` → `prechecks` → `pull` → `deploy` → `post-deploy`.
 It also lists the problems met along the way and their fixes.
 
@@ -143,6 +146,19 @@ Horizon at `http://10.0.0.100/`: domain `Default`, user `admin`, password
 `keystone_admin_password` from `/etc/kolla/passwords.yml`.
 
 ## Day 2 operations
+
+Run the health check before and after every change. It changes nothing and
+fails if any check fails:
+
+```bash
+ansible-playbook playbooks/health.yml
+```
+
+| `health.yml` tag | What it checks |
+|------------------|----------------|
+| `nodes` | Every host: reachable, chrony offset < 0.05 s, ≥ 15% free on `/`, renamed NICs up, management/storage IPs present, pending reboot (warning) |
+| `ceph` | On ceph01: HEALTH_OK (warnings listed), MON quorum, OSDs up/in, PGs `active+clean`, fullest OSD < 40%, cephadm daemons running, new crashes (warning) |
+| `openstack` | Kolla containers running and healthy on controller and computes; from the deploy VM: Keystone on the VIP, compute services, network agents and volume services up |
 
 [kolla/OPERATIONS.md](kolla/OPERATIONS.md) covers running the cloud:
 

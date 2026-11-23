@@ -6,8 +6,21 @@ adding and removing disks and nodes, upgrades, backups. The build itself is in
 
 Lab assumptions: 3 nodes (`ceph01`-`ceph03`) with 2 OSDs each, 3 MONs, 2 MGRs,
 pools `images` / `volumes` / `vms` at `size 3` / `min_size 2` with failure
-domain = host, release squid. `ceph` commands run as root on **ceph01** (the
-admin node), or in `cephadm shell`.
+domain = host, release squid. `ceph` commands run as root on **ceph01** or **ceph02** (both
+carry the `_admin` label, so cephadm keeps `/etc/ceph/ceph.conf` and the admin
+keyring on them), or in `cephadm shell`.
+
+The cluster is described in the repo and converged by Ansible, from the
+deploy VM (`source ~/venv/bin/activate`, repo root):
+
+| What | Where in the repo | Applied by |
+|------|-------------------|------------|
+| Hosts, storage IPs, labels (`_admin`, `mon`, `mgr`) | `inventory/hosts.yml` (`ceph_nodes`, `ceph_labels`) | `ceph-cluster.yml --tags specs` |
+| MON / MGR placement (hosts with the `mon` / `mgr` label), OSDs on every empty disk | `inventory/group_vars/ceph_nodes.yml`, `playbooks/roles/ceph_specs/templates/cluster-spec.yml.j2` | `ceph-cluster.yml --tags specs` |
+| Pools, CephX users, Kolla keyrings | `inventory/group_vars/ceph_nodes.yml` | `ceph-pools.yml` |
+
+Change these files, not the cluster by hand: a later run puts the repo's
+state back. Preview with `--check --diff`.
 
 ## How cephadm applies a change
 
@@ -17,7 +30,7 @@ to it, one daemon at a time.
 
 | Control | Use it for |
 |---------|------------|
-| `ceph orch apply -i spec.yml --dry-run` | Preview a placement change |
+| `ceph-cluster.yml --tags specs --check --diff` | Preview a spec change (the playbook also runs `ceph orch apply --dry-run` before applying) |
 | `ceph osd ok-to-stop <id>`, `ceph mon ok-to-stop <id>`, `ceph orch host ok-to-stop <host>` | "Can this go down without losing I/O or quorum?" |
 | `ceph orch host maintenance enter/exit <host>` | Take one node down: stops its daemons, sets noout for it |
 | `ceph osd set noout` / `norebalance` | No data movement during a short outage |
@@ -26,21 +39,22 @@ to it, one daemon at a time.
 Use the same loop for every change:
 
 ```
-ceph -s shows HEALTH_OK → change ONE thing → wait for HEALTH_OK and all PGs active+clean → next
+health.yml passes → change ONE thing → wait for HEALTH_OK and all PGs active+clean → health.yml passes → next
 ```
 
 **Never have two nodes down at once.** With 3 replicas on 3 hosts and
 `min_size 2`, a second node down stops I/O.
 
-Health check, daily and before and after every change:
+Health check, daily and before and after every change, from the deploy VM:
 
 ```bash
-ceph -s
-ceph health detail
-ceph osd df tree
-ceph orch ps --refresh | grep -v running    # daemons that are not running
-ceph crash ls-new
+ansible-playbook playbooks/health.yml --tags ceph    # or without --tags: the whole lab
 ```
+
+It checks HEALTH_OK, MON quorum, OSDs up/in, PGs active+clean, the fullest OSD
+against the 40% rule ([Capacity](#capacity)), cephadm daemons and new crashes,
+and fails if anything is wrong. For details, on ceph01: `ceph health detail`,
+`ceph osd df tree`, `ceph orch ps --refresh`, `ceph crash ls-new`.
 
 ## Node maintenance
 
@@ -79,24 +93,27 @@ Example: `ceph04`, 10.0.0.80 / 10.0.2.80.
 
 1. **VMware:** create a VM with 3 NICs (NAT, management, storage), Ubuntu
    22.04 like the other Ceph nodes, and empty OSD disks.
-2. **Repo (workstation):** add it to `ceph_nodes` in `inventory/hosts.yml`,
-   write `netplan/ceph04.yaml` with its MACs, and update the README hosts
-   table. Commit and push.
+2. **Repo (workstation):**
+   - Add it to `ceph_nodes` in `inventory/hosts.yml`, with `storage_ip` and
+     `ceph_labels` (`[]` for an OSD-only node).
+   - Write `netplan/ceph04.yaml` with its MACs.
+   - Raise `ceph_osd_expected` in `inventory/group_vars/ceph_nodes.yml`.
+   - Update the README hosts table. Commit and push.
 3. **Deploy VM:**
    ```bash
    source ~/venv/bin/activate
+   ansible-playbook playbooks/health.yml
    ansible-playbook playbooks/preconfig.yml -K              # no --limit (clone check, /etc/hosts everywhere)
    ansible-playbook playbooks/ceph-prereqs.yml -K --limit ceph04
-   ansible-playbook playbooks/ceph-ssh.yml -K
+   ansible-playbook playbooks/ceph-cluster.yml --tags sshd,authkey,check,specs --check --diff
+   ansible-playbook playbooks/ceph-cluster.yml --tags sshd,authkey,check,specs
+   ansible-playbook playbooks/health.yml
    ```
-4. **ceph01:**
-   ```bash
-   ceph orch host add ceph04 10.0.2.80
-   ceph orch device ls --refresh        # then add its OSDs (above)
-   ```
+   The `specs` tag adds the host and its labels. The OSD spec then creates OSDs
+   on its empty disks, and the run waits for `ceph_osd_expected` OSDs.
 
-Keep 3 MONs, or go to 5. Never use an even number. If the MONs change,
-update the Kolla clients ([below](#keep-the-openstack-clients-in-step)).
+Keep 3 MONs, or go to 5: never an even number of `mon` labels. If the MONs
+change, update the Kolla clients ([below](#keep-the-openstack-clients-in-step)).
 
 ## Remove a node
 
@@ -111,8 +128,29 @@ ceph orch osd rm status          # wait until empty
 ceph orch host rm ceph03
 ```
 
-Afterwards, remove it from `inventory/hosts.yml` and `netplan/`, and run
-`ansible-playbook playbooks/preconfig.yml -K --tags hosts`.
+Afterwards:
+1. Remove it from `inventory/hosts.yml` and `netplan/`, and lower
+   `ceph_osd_expected`. Commit and push.
+2. Run `ansible-playbook playbooks/preconfig.yml -K --tags hosts`.
+3. Run `ansible-playbook playbooks/ceph-cluster.yml --tags specs`, so the
+   applied spec matches the repo again.
+
+If it carried `mon` or `_admin`, give those labels to another host in
+`hosts.yml` first and apply the specs, so 3 MONs and 2 admin nodes remain.
+
+## Pools and users
+
+Pools (size, min_size, application) and CephX users (caps) are lists in
+`inventory/group_vars/ceph_nodes.yml`. Edit them, commit and push, then:
+
+```bash
+ansible-playbook playbooks/ceph-pools.yml --check --diff
+ansible-playbook playbooks/ceph-pools.yml
+```
+
+The playbook creates what is missing and changes what differs. It never
+deletes a pool or a user: do that by hand (`ceph osd pool rm`, `ceph auth rm`)
+after removing it from the lists.
 
 ## Capacity
 
@@ -151,19 +189,18 @@ same host**: there is no other host to take it. To stay under the 85%
 Kolla's Glance, Cinder and Nova read `kolla/config/ceph.conf` (fsid + MON
 addresses). If a MON is added, removed or changes IP:
 
-```bash
-# ceph01
-ceph config generate-minimal-conf > /tmp/ceph.conf
-sed -i 's/^[[:space:]]\+//' /tmp/ceph.conf
-```
+`ansible-playbook playbooks/ceph-pools.yml --tags clients` checks this: it
+fails when the repo's `kolla/config/ceph.conf` no longer matches the cluster,
+and prints the lines to put in it. Then:
 
-1. Put it in the repo as `kolla/config/ceph.conf`, then commit and push.
+1. Replace `kolla/config/ceph.conf` with those lines on the workstation,
+   commit and push.
 2. On the deploy VM: `ansible-playbook playbooks/kolla-config.yml --diff`.
 3. Then: `kolla-ansible reconfigure -i inventory/multinode --tags glance,cinder,nova`.
 
-The keyrings change only if the `client.glance` / `client.cinder` keys
-change. Copy them to `/etc/kolla/config/` by hand, as in
-[kolla/README.md](../kolla/README.md#2-etckolla).
+The same `clients` tag writes the `client.glance` / `client.cinder` keyrings
+to `/etc/kolla/config/` on the deploy VM, so a changed key only needs that run
+and the same `reconfigure`.
 
 ## Backup and recovery
 
