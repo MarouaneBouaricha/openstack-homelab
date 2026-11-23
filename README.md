@@ -132,7 +132,8 @@ then follow [ceph/README.md](ceph/README.md): bootstrap on ceph01,
 ### 4. Deploy OpenStack
 
 Follow [kolla/README.md](kolla/README.md): kolla-ansible in a Python 3.12
-virtualenv, `/etc/kolla` from `kolla/globals.yml`, the Ceph keyrings, then
+virtualenv, `/etc/kolla` synced from `kolla/` by `playbooks/kolla-config.yml`,
+the Ceph keyrings, then
 `bootstrap-servers` → `prechecks` → `pull` → `deploy` → `post-deploy`.
 It also lists the problems met along the way and their fixes.
 
@@ -149,7 +150,14 @@ Horizon at `http://10.0.0.100/`: domain `Default`, user `admin`, password
 - enabling and disabling services, and changing their config
 - upgrades, backups and restore
 - the power off / power on order
-- recommendations for maintaining the lab
+
+[ceph/OPERATIONS.md](ceph/OPERATIONS.md) does the same for the Ceph cluster:
+
+- node maintenance
+- adding and replacing OSDs, adding and removing nodes
+- capacity rules and upgrades
+- keeping Kolla's `ceph.conf` in step
+- backups
 
 ## Adding a cloned VM
 

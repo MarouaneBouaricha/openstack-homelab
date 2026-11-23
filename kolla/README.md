@@ -42,10 +42,32 @@ kolla-ansible install-deps
 
 ```bash
 sudo install -d -o $USER -g $USER /etc/kolla
-cp kolla/globals.yml /etc/kolla/globals.yml
 cp ~/venv-2026.1/share/kolla-ansible/etc_examples/kolla/passwords.yml /etc/kolla/
 kolla-genpwd                                   # fills every empty password
+source ~/venv/bin/activate                     # the repo's Ansible
+ansible-playbook playbooks/kolla-config.yml --diff
 ```
+
+`/etc/kolla` is written **only from the repo**: edit `kolla/globals.yml` or a
+file under `kolla/config/` on the workstation, commit and push, then run
+`playbooks/kolla-config.yml` on the deploy VM. Never edit the copies in `/etc/kolla`.
+
+| Repo file | Copied to |
+|-----------|-----------|
+| `kolla/globals.yml` | `/etc/kolla/globals.yml` |
+| `kolla/config/ceph.conf` | `/etc/kolla/config/{glance,cinder,nova}/ceph.conf` |
+| any other `kolla/config/<path>` (Kolla [config overrides](OPERATIONS.md#change-the-config-of-a-running-service)) | `/etc/kolla/config/<path>` |
+
+| `kolla-config.yml` | What it does |
+|--------------------|--------------|
+| *(always)* | Fails if `/etc/kolla` is not writable, or if a `.conf`/`.ini` under `kolla/config/` has an indented line |
+| *(always)* | Dry-run comparison of every file (diffs with `--diff`), then copies only the files that differ |
+| `backup` | Before any change, `~/kolla-backups/kolla-config-<UTC time>.tgz` of `globals.yml` + `config/` (keyrings included, last 20 kept) |
+| *(always)* | Reports files in `/etc/kolla/config` that the repo does not manage, missing secrets, and the `kolla-ansible` command to run next |
+
+It only adds and updates files: it never deletes one (remove an override by
+hand), and never touches `passwords.yml` or the keyrings. Preview with
+`--check --diff`.
 
 Settings in `globals.yml` that matter for this lab:
 
@@ -61,13 +83,14 @@ Settings in `globals.yml` that matter for this lab:
 
 Ceph client files, from ceph01 (Ceph runbook steps 6-7):
 
-| File on ceph01 | Copy to, under `/etc/kolla/config/` |
-|----------------|-------------------------------------|
-| `/tmp/ceph.conf` | `glance/ceph.conf`, `cinder/ceph.conf`, `nova/ceph.conf` |
-| `/etc/ceph/ceph.client.glance.keyring` | `glance/` |
-| `/etc/ceph/ceph.client.cinder.keyring` | `cinder/cinder-volume/`, `nova/` |
+| File on ceph01 | Goes to |
+|----------------|---------|
+| `/tmp/ceph.conf` | the repo, as `kolla/config/ceph.conf` (commit it; `kolla-config.yml` copies it) |
+| `/etc/ceph/ceph.client.glance.keyring` | `/etc/kolla/config/glance/`, by hand (secret) |
+| `/etc/ceph/ceph.client.cinder.keyring` | `/etc/kolla/config/cinder/cinder-volume/` and `/etc/kolla/config/nova/`, by hand (secret) |
 
-The `ceph.conf` files must have **no indented lines** (see Troubleshooting).
+`ceph.conf` must have **no indented lines** (see Troubleshooting); the
+playbook refuses to copy one that has.
 
 ## 3. Deploy
 

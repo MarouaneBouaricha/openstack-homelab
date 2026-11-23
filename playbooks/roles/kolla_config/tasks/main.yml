@@ -1,0 +1,199 @@
+---
+# --- Preconditions -------------------------------------------------------------
+- name: Check /etc/kolla
+  ansible.builtin.stat:
+    path: "{{ kolla_config_dir }}"
+  register: kolla_config_dir_stat
+
+- name: Fail if /etc/kolla is missing or not writable
+  ansible.builtin.assert:
+    that:
+      - kolla_config_dir_stat.stat.exists
+      - kolla_config_dir_stat.stat.isdir
+      - kolla_config_dir_stat.stat.writeable
+    fail_msg: >-
+      {{ kolla_config_dir }} must exist and be writable by {{ lookup('env', 'USER') }}:
+      sudo install -d -o $USER -g $USER {{ kolla_config_dir }}
+    quiet: true
+
+# Kolla merges these files with an INI parser that reads ANY indented line
+# (tabs or spaces) as a continuation of the previous one. Indented comments are fine.
+- name: Look for indented lines in the INI overrides
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -rnE
+      - "^[[:space:]]+[^[:space:]#;]"
+      - --include=*.conf
+      - --include=*.ini
+      - "{{ kolla_config_src }}/config"
+  register: kolla_config_indented
+  changed_when: false
+  failed_when: kolla_config_indented.rc > 1
+  check_mode: false
+
+- name: Fail on indented lines
+  ansible.builtin.fail:
+    msg: |
+      Indented lines in kolla/config (Kolla would fail with "Unexpected continuation line").
+      Fix them in the repo: sed -i 's/^[[:space:]]\+//' <file>
+      {{ kolla_config_indented.stdout }}
+  when: kolla_config_indented.rc == 0
+
+# --- What the repo manages -------------------------------------------------------
+- name: List the repo's override files
+  ansible.builtin.find:
+    paths: "{{ kolla_config_src }}/config"
+    recurse: true
+    file_type: file
+    excludes: "{{ kolla_config_excludes }}"
+  register: kolla_config_src_files
+
+# List of [src, dest] pairs
+- name: Build the list of managed files
+  ansible.builtin.set_fact:
+    kolla_config_files: >-
+      {{ [[kolla_config_src ~ '/globals.yml', kolla_config_dir ~ '/globals.yml']]
+         + (_ceph_pairs if 'ceph.conf' in _rel else [])
+         + (_overrides | map('regex_replace', '^', kolla_config_src ~ '/config/')
+            | zip(_overrides | map('regex_replace', '^', kolla_config_dir ~ '/config/')) | list) }}
+  vars:
+    _rel: "{{ kolla_config_src_files.files | map(attribute='path') | map('relpath', kolla_config_src ~ '/config') | list }}"
+    _overrides: "{{ _rel | reject('equalto', 'ceph.conf') | sort }}"
+    _ceph_pairs: >-
+      {{ [kolla_config_src ~ '/config/ceph.conf']
+         | product(kolla_config_ceph_services
+                   | map('regex_replace', '^', kolla_config_dir ~ '/config/')
+                   | map('regex_replace', '$', '/ceph.conf'))
+         | list }}
+
+# --- Plan ----------------------------------------------------------------------
+# Always a dry run: shows the diffs with --diff, writes nothing. In check mode
+# copy compares checksums only, so a file in a directory that does not exist
+# yet shows up as changed (new) instead of failing.
+- name: Compare the repo with /etc/kolla
+  ansible.builtin.copy:
+    src: "{{ item.0 }}"
+    dest: "{{ item.1 }}"
+  check_mode: true
+  loop: "{{ kolla_config_files }}"
+  loop_control:
+    label: "{{ item.1 }}"
+  register: kolla_config_plan
+
+- name: Files to write
+  ansible.builtin.set_fact:
+    kolla_config_changed: "{{ kolla_config_plan.results | selectattr('changed') | map(attribute='item') | list }}"
+
+# --- Backup --------------------------------------------------------------------
+- name: Back up /etc/kolla before changing it
+  when:
+    - kolla_config_changed | length > 0
+    - not ansible_check_mode
+  tags: [backup]
+  block:
+    - name: Create the backup directory
+      ansible.builtin.file:
+        path: "{{ kolla_config_backup_dir }}"
+        state: directory
+        mode: "0700"
+
+    # Includes the keyrings, not passwords.yml (back that up separately)
+    - name: Archive globals.yml and config/
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --ignore-failed-read
+          - -czf
+          - "{{ kolla_config_backup_dir }}/kolla-config-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}.tgz"
+          - -C
+          - "{{ kolla_config_dir }}"
+          - globals.yml
+          - config
+      register: kolla_config_backup
+      changed_when: true
+
+    - name: List the backups
+      ansible.builtin.find:
+        paths: "{{ kolla_config_backup_dir }}"
+        patterns: "kolla-config-*.tgz"
+      register: kolla_config_backups
+
+    - name: Keep the last {{ kolla_config_backup_keep }} backups
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: >-
+        {{ (kolla_config_backups.files | sort(attribute='mtime') | map(attribute='path') | list)
+           [:-(kolla_config_backup_keep | int)] }}
+
+# --- Sync ----------------------------------------------------------------------
+- name: Create the directories of new files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ kolla_config_changed | map(attribute=1) | map('dirname') | unique | list }}"
+  when: not ansible_check_mode
+
+# The plan already printed the diffs
+- name: Copy the changed files
+  ansible.builtin.copy:
+    src: "{{ item.0 }}"
+    dest: "{{ item.1 }}"
+  diff: false
+  loop: "{{ kolla_config_changed }}"
+  loop_control:
+    label: "{{ item.1 }}"
+  when: not ansible_check_mode
+
+# --- Report --------------------------------------------------------------------
+- name: List the files in /etc/kolla/config
+  ansible.builtin.find:
+    paths: "{{ kolla_config_dir }}/config"
+    recurse: true
+    file_type: file
+    excludes: ["*.keyring"]
+  register: kolla_config_live_files
+
+- name: Check the deploy VM's secrets
+  ansible.builtin.stat:
+    path: "{{ kolla_config_dir }}/{{ item }}"
+    get_checksum: false
+  loop: "{{ kolla_config_secrets }}"
+  register: kolla_config_secret_stat
+
+- name: Files in /etc/kolla/config that the repo does not manage
+  ansible.builtin.debug:
+    msg: >-
+      Not in kolla/config, so left untouched (add them to the repo, or delete them):
+      {{ _unmanaged }}
+  vars:
+    _unmanaged: >-
+      {{ kolla_config_live_files.files | map(attribute='path')
+         | difference(kolla_config_files | map(attribute=1)) | sort }}
+  when: _unmanaged | length > 0
+
+- name: Missing secrets
+  ansible.builtin.debug:
+    msg: >-
+      Missing under {{ kolla_config_dir }} (they are not in the repo, see kolla/README.md):
+      {{ kolla_config_secret_stat.results | rejectattr('stat.exists') | map(attribute='item') | list }}
+  when: kolla_config_secret_stat.results | rejectattr('stat.exists') | list | length > 0
+
+- name: Next step
+  ansible.builtin.debug:
+    msg: >-
+      {% if kolla_config_changed | length == 0 %}/etc/kolla already matches the repo.
+      {% else %}{{ 'Would change' if ansible_check_mode else 'Changed' }}:
+      {{ kolla_config_changed | map(attribute=1) | list }}.
+      {% if _globals in kolla_config_changed | map(attribute=1) | list %}globals.yml changed: run prechecks,
+      then deploy (a service enabled or disabled) or reconfigure.
+      {% endif %}{% if _services | length > 0 %}Overrides changed: kolla-ansible reconfigure
+      -i inventory/multinode --tags {{ _services | join(',') }}{% endif %}{% endif %}
+  vars:
+    _globals: "{{ kolla_config_dir }}/globals.yml"
+    _services: >-
+      {{ kolla_config_changed | map(attribute=1) | reject('equalto', _globals)
+         | map('relpath', kolla_config_dir ~ '/config') | map('regex_search', '^[^/.]+')
+         | unique | list }}

@@ -67,6 +67,13 @@ ceph osd pool autoscale-status
 
 ## Next: hand the cluster to Kolla-Ansible
 
-Copy `/tmp/ceph.conf` and the `glance` / `cinder` keyrings from ceph01 to
-`/etc/kolla/config/` on the deploy VM, as listed in
-[kolla/README.md](../kolla/README.md#2-etckolla).
+Put `/tmp/ceph.conf` from ceph01 into the repo as `kolla/config/ceph.conf`.
+`playbooks/kolla-config.yml` copies it into place. Copy the `glance` and
+`cinder` keyrings to `/etc/kolla/config/` on the deploy VM by hand. Both are
+listed in [kolla/README.md](../kolla/README.md#2-etckolla).
+
+## Day 2
+
+Running the cluster afterwards is covered in [OPERATIONS.md](OPERATIONS.md):
+maintenance, adding and removing disks and nodes, capacity, upgrades, and
+backups.

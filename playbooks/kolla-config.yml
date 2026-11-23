@@ -1,0 +1,26 @@
+---
+# =============================================================================
+# Kolla config sync: makes /etc/kolla on the deploy VM match the repo
+#
+#   (always) checks: /etc/kolla writable, no indented lines in INI overrides
+#            (Kolla's parser reads them as continuations)
+#   backup   tarball of /etc/kolla/globals.yml + config/ in ~/kolla-backups
+#            before any change (last 20 kept)
+#   (always) copies kolla/globals.yml -> /etc/kolla/globals.yml,
+#            kolla/config/ceph.conf -> /etc/kolla/config/{glance,cinder,nova}/,
+#            every other file under kolla/config/ -> same path under /etc/kolla/config/
+#            then reports unmanaged files, missing secrets and the
+#            kolla-ansible command to run next
+#
+# Add and update only: never deletes a file, and never touches passwords.yml or
+# the Ceph keyrings (secrets that stay on the deploy VM).
+#
+# Run from the repo root on the deploy VM (no -K: /etc/kolla belongs to the user):
+#   ansible-playbook playbooks/kolla-config.yml --check --diff   # preview
+#   ansible-playbook playbooks/kolla-config.yml --diff           # apply
+# =============================================================================
+- name: Kolla config | sync /etc/kolla from the repo
+  hosts: deployment
+  become: false
+  gather_facts: false
+  roles: [kolla_config]

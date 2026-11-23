@@ -38,8 +38,22 @@ Use the same loop for every change:
 
 ```
 workstation: edit → git commit → git push   (this also updates the repo on the deploy VM)
-deploy VM:   sync /etc/kolla → prechecks → pull → deploy/reconfigure (--limit/--tags) 2>&1 | tee log → verify
+deploy VM:   kolla-config.yml → prechecks → pull → deploy/reconfigure (--limit/--tags) 2>&1 | tee log → verify
 ```
+
+`/etc/kolla` is only ever written from the repo, by
+`playbooks/kolla-config.yml` (it uses the repo's Ansible venv, not Kolla's):
+
+```bash
+source ~/venv/bin/activate
+ansible-playbook playbooks/kolla-config.yml --check --diff   # what would change
+ansible-playbook playbooks/kolla-config.yml --diff           # apply, then prints the kolla-ansible command to run
+source ~/venv-2026.1/bin/activate
+```
+
+Never edit `/etc/kolla/globals.yml` or the overrides on the deploy VM: the next
+sync overwrites them. Secrets (`passwords.yml`, keyrings) are the exception;
+they stay outside the repo. Details in [README.md](README.md#2-etckolla).
 
 Verify the same way every time:
 
@@ -150,6 +164,7 @@ Example: Designate, Octavia, Prometheus/Grafana.
    need more than a flag: Octavia needs certificates and a management
    network, Designate a backend.
 2. Set `enable_<svc>: "yes"` in [globals.yml](globals.yml), commit and push.
+   Then run `ansible-playbook playbooks/kolla-config.yml --diff`.
 3. Add the new passwords. A `passwords.yml` from an older release lacks keys, so
    merge before generating:
    ```bash
@@ -175,7 +190,7 @@ Example: Designate, Octavia, Prometheus/Grafana.
 Setting `enable_<svc>: "no"` does **not** remove anything. Kolla just stops
 managing the service. To clean it up fully:
 
-1. Set `enable_<svc>: "no"`, commit and push.
+1. Set `enable_<svc>: "no"`, commit, push, and run `playbooks/kolla-config.yml`.
 2. Stop it with
    `kolla-ansible stop -i inventory/multinode --tags <svc> --yes-i-really-really-mean-it`.
    If `stop` ignores the tag, run `docker stop` / `docker rm` on the
@@ -191,15 +206,19 @@ managing the service. To clean it up fully:
 
 ## Change the config of a running service
 
-Kolla merges override files over its generated config:
+Kolla merges override files over its generated config. Create them in the
+repo under `kolla/config/`, at the path they need under `/etc/kolla/config/`:
 
 ```
-/etc/kolla/config/nova.conf                 # every nova container
-/etc/kolla/config/nova/nova-compute.conf    # one container
-/etc/kolla/config/nova/compute02/nova.conf  # one host
+kolla/config/nova.conf                 # every nova container
+kolla/config/nova/nova-compute.conf    # one container
+kolla/config/nova/compute02/nova.conf  # one host
 ```
+
+Commit and push, then on the deploy VM:
 
 ```bash
+ansible-playbook playbooks/kolla-config.yml --diff     # repo venv (~/venv)
 kolla-ansible validate-config -i inventory/multinode --tags nova
 kolla-ansible reconfigure     -i inventory/multinode --tags nova [--limit compute01]
 ```
@@ -226,8 +245,8 @@ problem as `ceph.conf` (see [Troubleshooting](README.md#troubleshooting)).
   5. Back up MariaDB.
   6. Run `bootstrap-servers`, `prechecks`, `pull`, `upgrade`, `post-deploy`.
 - **Do not fall behind.** quay.io deletes the images of releases past their
-  maintained phase. After that you can neither redeploy nor add a node (see
-  [Recommendations](#recommendations), point 3).
+  maintained phase. After that you can neither redeploy nor add a node,
+  unless the images are mirrored in a local registry.
 
 ## Backup and restore
 
@@ -255,40 +274,3 @@ problem as `ceph.conf` (see [Troubleshooting](README.md#troubleshooting)).
 To restart instances by themselves after a reboot, put
 `resume_guests_state_on_host_boot = true` in `[DEFAULT]` of
 `/etc/kolla/config/nova/nova-compute.conf`.
-
-## Recommendations
-
-In priority order:
-
-1. **Make the repo authoritative for `/etc/kolla`.** Syncing `globals.yml` by
-   hand drifts. Symlink the non-secret files on the deploy VM
-   (`ln -sf ~/openstack-homelab/kolla/globals.yml /etc/kolla/globals.yml`,
-   and the same for each override in `kolla/config/`), or write a small
-   sync playbook. `git push` then becomes the only way config changes.
-   Keyrings stay gitignored.
-2. **Set up backups first.** Enable mariabackup and add a nightly cron on the
-   deploy VM: back up the database, then copy the backup volume and an
-   encrypted `/etc/kolla` off the lab. With one controller, this is the only
-   recovery path.
-3. **Mirror the images locally.** Run a `registry:2` container on the deploy VM
-   and push the 2026.1 images into it. Then set
-   `docker_registry: 10.0.0.10:4000` and `docker_registry_insecure: "yes"`.
-   This guards against quay.io deleting images, speeds up node adds and
-   allows offline work.
-4. **Add monitoring.** Set `enable_prometheus` and `enable_grafana` to `"yes"`
-   (the `[monitoring]` group is the controller already). Add Ceph's Prometheus
-   module as a Grafana source. Skip central logging (OpenSearch) unless the
-   controller has spare RAM.
-5. **Write a health-check playbook.** Wrap the verification commands above in
-   `playbooks/health.yml` and run it before and after every change.
-6. **Keep an upgrade cadence.** Do minor updates about monthly, and move from
-   SLURP to SLURP (2026.1 → 2027.1) before the images disappear. Rehearse
-   each upgrade on a powered-off snapshot set.
-7. **Check the controller's headroom** before adding a third compute.
-   Prometheus, Grafana and future services all need its RAM. Go to 3
-   controllers only if HA is itself something you want to learn.
-8. **Later:** TLS (`kolla_enable_tls_external`, `kolla-ansible certificates`), and a
-   `backups` pool with `client.cinder-backup` to enable `cinder-backup`.
-9. **Commit a change everywhere at once.** A node or service change touches
-   `hosts.yml`, `multinode`, `netplan/`, `globals.yml` and the README tables.
-   Commit them together, so the repo can always rebuild the lab.

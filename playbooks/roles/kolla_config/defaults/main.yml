@@ -1,0 +1,25 @@
+---
+# Repo side: kolla/ at the repo root (playbooks/ is one level down)
+kolla_config_src: "{{ playbook_dir | dirname }}/kolla"
+
+# Deploy VM side: what kolla-ansible reads
+kolla_config_dir: /etc/kolla
+
+# kolla/config/ceph.conf (top level) is copied into each of these
+# /etc/kolla/config/<service>/ directories. Every other file under kolla/config/
+# is mirrored at the same relative path.
+kolla_config_ceph_services: [glance, cinder, nova]
+
+# Repo files never copied (basename patterns). Keyrings are gitignored anyway.
+kolla_config_excludes: ["*.keyring", "README*", ".*", "*.bak", "*.orig", "*~"]
+
+# Secrets that live only on the deploy VM: warned about when missing
+kolla_config_secrets:
+  - passwords.yml
+  - config/glance/ceph.client.glance.keyring
+  - config/cinder/cinder-volume/ceph.client.cinder.keyring
+  - config/nova/ceph.client.cinder.keyring
+
+# Tarball of globals.yml + config/ taken before every change
+kolla_config_backup_dir: "{{ lookup('env', 'HOME') }}/kolla-backups"
+kolla_config_backup_keep: 20
