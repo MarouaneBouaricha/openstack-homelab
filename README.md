@@ -61,7 +61,7 @@ are the same on every VM.
 ├── netplan/               # per-VM network config, matched by MAC
 ├── playbooks/             # node preparation, Ceph prerequisites, OS upgrade
 ├── ceph/                  # Ceph cluster runbook (cephadm)
-├── kolla/                 # globals.yml, Ceph client config, deploy guide
+├── kolla/                 # globals.yml, Ceph client config, deploy guide, Day 2 operations
 └── docs/                  # architecture diagram
 ```
 
@@ -140,6 +140,16 @@ It also lists the problems met along the way and their fixes.
 
 Horizon at `http://10.0.0.100/`: domain `Default`, user `admin`, password
 `keystone_admin_password` from `/etc/kolla/passwords.yml`.
+
+## Day 2 operations
+
+[kolla/OPERATIONS.md](kolla/OPERATIONS.md) covers running the cloud:
+
+- adding or removing compute nodes and controllers
+- enabling and disabling services, and changing their config
+- upgrades, backups and restore
+- the power off / power on order
+- recommendations for maintaining the lab
 
 ## Adding a cloned VM
 

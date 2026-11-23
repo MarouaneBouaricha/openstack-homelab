@@ -11,6 +11,10 @@ deploy VM, on top of the external Ceph cluster built in [../ceph](../ceph/README
 
 `passwords.yml` and the Ceph keyrings are secrets and are **not** in the repo.
 
+Once deployed, running the cloud (adding/removing nodes and services, config
+changes, upgrades, backups, power off/on) is covered in
+[OPERATIONS.md](OPERATIONS.md).
+
 ## Requirements
 
 - OpenStack nodes (controller, compute01, compute02) on **Ubuntu 24.04**: it is
@@ -104,9 +108,11 @@ on Ubuntu 22.04 while the prechecks accept only 24.04.
 
 ### Adding a service later
 
-Set `enable_<service>: "yes"` in `globals.yml`, run `kolla-genpwd` for new
-passwords, then `kolla-ansible deploy -i inventory/multinode --tags <service>`.
-To change the config of a deployed service:
+See [OPERATIONS.md](OPERATIONS.md#enable-a-service). In short: set
+`enable_<service>: "yes"` in `globals.yml`, merge and generate the new passwords
+(`kolla-mergepwd`, `kolla-genpwd`), run `prechecks` and `pull`, and then run a
+full `kolla-ansible deploy`. A `--tags <service>` run would miss the HAProxy,
+Keystone and Horizon changes. To change the config of a deployed service:
 `kolla-ansible reconfigure -i inventory/multinode --tags <service>`.
 
 ## Troubleshooting
