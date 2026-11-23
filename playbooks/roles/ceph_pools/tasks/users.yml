@@ -1,0 +1,54 @@
+---
+# Create missing users, and set the caps of existing ones only when they
+# differ from ceph_clients. The output holds keys: no_log on the reads.
+
+- name: Users | read existing users
+  ansible.builtin.command: ceph auth get {{ item.name }} -f json
+  loop: "{{ ceph_clients }}"
+  register: ceph_users_current
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Users | create missing users
+  ansible.builtin.command:
+    argv:
+      - ceph
+      - auth
+      - get-or-create
+      - "{{ item.item.name }}"
+      - mon
+      - "{{ item.item.caps.mon }}"
+      - osd
+      - "{{ item.item.caps.osd }}"
+      - mgr
+      - "{{ item.item.caps.mgr }}"
+  loop: "{{ ceph_users_current.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.rc != 0
+  changed_when: true
+  no_log: true
+
+- name: Users | update caps that differ
+  ansible.builtin.command:
+    argv:
+      - ceph
+      - auth
+      - caps
+      - "{{ item.item.name }}"
+      - mon
+      - "{{ item.item.caps.mon }}"
+      - osd
+      - "{{ item.item.caps.osd }}"
+      - mgr
+      - "{{ item.item.caps.mgr }}"
+  loop: "{{ ceph_users_current.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - item.rc == 0
+    - (item.stdout | from_json)[0].caps != item.item.caps
+  changed_when: true
+  no_log: true   # item holds the key read above

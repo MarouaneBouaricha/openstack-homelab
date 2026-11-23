@@ -1,0 +1,27 @@
+---
+# =============================================================================
+# Ceph pools, CephX users and the Kolla client files, from
+# inventory/group_vars/ceph_nodes.yml (ceph_pools, ceph_clients,
+# ceph_kolla_keyrings). Idempotent: reports "changed" only on a real change.
+#
+#   pools    creates missing pools, sets size / min_size / application when
+#            they differ, `rbd pool init` on new pools only
+#   users    creates missing users (client.glance, client.cinder), updates
+#            caps that differ
+#   clients  writes the users' keyrings under /etc/kolla/config/ on the deploy
+#            VM (mode 0600, skipped if /etc/kolla does not exist yet), and
+#            fails if kolla/config/ceph.conf in the repo no longer matches the
+#            cluster (fsid / MONs), printing the lines to commit
+#
+# Never deletes a pool or a user. Also run by ceph-cluster.yml.
+#
+# Run from the repo root on the deploy VM:
+#   ansible-playbook playbooks/ceph-pools.yml --check --diff
+#   ansible-playbook playbooks/ceph-pools.yml
+#   ansible-playbook playbooks/ceph-pools.yml --tags clients
+# =============================================================================
+- name: Ceph pools | pools, users, Kolla client files
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  roles: [ceph_pools]

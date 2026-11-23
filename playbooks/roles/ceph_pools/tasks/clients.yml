@@ -1,0 +1,74 @@
+---
+# Kolla hand-off: keyrings written on the deploy VM (secrets, never in the
+# repo), and the repo's kolla/config/ceph.conf checked against the cluster.
+# The repo on the deploy VM is never written to: a dirty tree breaks `git push`.
+
+- name: Clients | check /etc/kolla on the deploy VM
+  ansible.builtin.stat:
+    path: "{{ ceph_kolla_config_dir }}"
+    get_checksum: false
+  delegate_to: "{{ ceph_kolla_host }}"
+  become: false
+  register: ceph_kolla_dir
+
+- name: Clients | /etc/kolla is not ready
+  ansible.builtin.debug:
+    msg: >-
+      Skipping the keyrings: {{ ceph_kolla_config_dir }} is missing or not writable on {{ ceph_kolla_host }}.
+      Create it (kolla/README.md, step 2), then run: ansible-playbook playbooks/ceph-pools.yml --tags clients
+  when: not (ceph_kolla_dir.stat.exists and ceph_kolla_dir.stat.writeable)
+
+- name: Clients | keyrings for Kolla
+  when: ceph_kolla_dir.stat.exists and ceph_kolla_dir.stat.writeable
+  block:
+    - name: Clients | read the keyrings
+      ansible.builtin.command: ceph auth get {{ item }}
+      loop: "{{ ceph_kolla_keyrings | map(attribute='client') | unique | list }}"
+      register: ceph_kolla_keyring_data
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Clients | keyring directories
+      ansible.builtin.file:
+        path: "{{ ceph_kolla_config_dir }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ ceph_kolla_keyrings | map(attribute='dest') | map('dirname') | unique | list }}"
+      delegate_to: "{{ ceph_kolla_host }}"
+      become: false
+
+    - name: Clients | write the keyrings
+      ansible.builtin.copy:
+        content: >-
+          {{ (ceph_kolla_keyring_data.results | selectattr('item', 'equalto', item.client) | first).stdout }}{{ '\n' }}
+        dest: "{{ ceph_kolla_config_dir }}/{{ item.dest }}"
+        mode: "0600"
+      loop: "{{ ceph_kolla_keyrings }}"
+      loop_control:
+        label: "{{ item.dest }}"
+      delegate_to: "{{ ceph_kolla_host }}"
+      become: false
+      diff: false
+      no_log: true
+
+- name: Clients | generate the minimal ceph.conf
+  ansible.builtin.command: ceph config generate-minimal-conf
+  register: ceph_minimal_conf
+  changed_when: false
+  check_mode: false
+
+- name: Clients | kolla/config/ceph.conf matches the cluster
+  ansible.builtin.assert:
+    that: _live == _repo
+    fail_msg: |
+      kolla/config/ceph.conf in the repo does not match this cluster (fsid or MONs changed).
+      On the workstation, replace kolla/config/ceph.conf with the lines below (no indentation),
+      commit and push, then on the deploy VM:
+        ansible-playbook playbooks/kolla-config.yml --diff
+        kolla-ansible reconfigure -i inventory/multinode --tags glance,cinder,nova
+      {{ _live | join('\n') }}
+    success_msg: kolla/config/ceph.conf matches the cluster
+  vars:
+    _live: "{{ ceph_minimal_conf.stdout_lines | map('trim') | reject('equalto', '') | list }}"
+    _repo: "{{ lookup('file', ceph_kolla_repo_conf).splitlines() | map('trim') | reject('equalto', '') | list }}"

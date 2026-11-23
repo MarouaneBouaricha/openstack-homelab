@@ -1,0 +1,12 @@
+---
+- name: Pools
+  ansible.builtin.import_tasks: pools.yml
+  tags: [pools]
+
+- name: CephX users
+  ansible.builtin.import_tasks: users.yml
+  tags: [users]
+
+- name: Kolla client files
+  ansible.builtin.import_tasks: clients.yml
+  tags: [clients]

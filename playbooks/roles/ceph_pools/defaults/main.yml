@@ -1,0 +1,8 @@
+---
+# Lab data (pools, users, keyrings) is in inventory/group_vars/ceph_nodes.yml.
+
+# Kolla side, on the deploy VM
+ceph_kolla_host: deploy
+ceph_kolla_config_dir: /etc/kolla
+# The repo's Kolla client config, compared with the live cluster
+ceph_kolla_repo_conf: "{{ playbook_dir | dirname }}/kolla/config/ceph.conf"

@@ -1,0 +1,14 @@
+---
+# Rendered cluster spec on the admin node, applied with `ceph orch apply -i`
+ceph_spec_path: /etc/ceph/cluster-spec.yml
+
+# `ceph orch ls --export` is saved here before every apply
+ceph_spec_backup_dir: /root/ceph-backups
+
+# Apply even when the rendered file did not change (e.g. after a manual
+# `ceph orch apply` drifted the cluster from the repo)
+ceph_spec_force: false
+
+# Wait for the OSDs after applying (fresh cluster): 60 x 10 s
+ceph_osd_wait_retries: 60
+ceph_osd_wait_delay: 10

@@ -1,0 +1,68 @@
+---
+# Hosts (with labels), MON/MGR placement and OSDs from one spec file rendered
+# from the inventory. Applied only when the rendered file changes (or
+# ceph_spec_force), after saving the cluster's current specs.
+
+- name: Specs | render the cluster spec
+  ansible.builtin.template:
+    src: cluster-spec.yml.j2
+    dest: "{{ ceph_spec_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: ceph_spec_file
+
+- name: Specs | apply
+  when:
+    - ceph_spec_file is changed or ceph_spec_force | bool
+    - not ansible_check_mode
+  block:
+    - name: Specs | backup directory
+      ansible.builtin.file:
+        path: "{{ ceph_spec_backup_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Specs | save the current specs (ceph orch ls --export)
+      ansible.builtin.shell: >-
+        ceph orch ls --export > {{ ceph_spec_backup_dir }}/specs-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}.yml
+      changed_when: true
+
+    - name: Specs | dry run
+      ansible.builtin.command: ceph orch apply -i {{ ceph_spec_path }} --dry-run
+      register: ceph_spec_dry_run
+      changed_when: false
+
+    - name: Specs | dry run output
+      ansible.builtin.debug:
+        msg: "{{ ceph_spec_dry_run.stdout_lines }}"
+
+    - name: Specs | ceph orch apply
+      ansible.builtin.command: ceph orch apply -i {{ ceph_spec_path }}
+      register: ceph_spec_apply
+      changed_when: true
+
+    - name: Specs | apply output
+      ansible.builtin.debug:
+        msg: "{{ ceph_spec_apply.stdout_lines }}"
+
+# Fresh cluster: the pools need OSDs. Returns at once on a running cluster.
+- name: Specs | wait for {{ ceph_osd_expected }} OSDs up
+  ansible.builtin.command: ceph osd stat -f json
+  register: ceph_osd_stat
+  changed_when: false
+  check_mode: false
+  retries: "{{ ceph_osd_wait_retries }}"
+  delay: "{{ ceph_osd_wait_delay }}"
+  until: (ceph_osd_stat.stdout | from_json).num_up_osds | int >= ceph_osd_expected | int
+  when: not ansible_check_mode
+
+- name: Specs | hosts and labels
+  ansible.builtin.command: ceph orch host ls
+  register: ceph_host_ls
+  changed_when: false
+  check_mode: false
+
+- name: Specs | current hosts
+  ansible.builtin.debug:
+    msg: "{{ ceph_host_ls.stdout_lines }}"

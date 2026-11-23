@@ -1,3 +1,42 @@
 ---
 # Ceph nodes have no provider NIC
 provider_interface: null
+
+# =============================================================================
+# Ceph cluster as code (playbooks/ceph-cluster.yml, playbooks/ceph-pools.yml)
+# Per-host cephadm labels are `ceph_labels` in inventory/hosts.yml.
+# =============================================================================
+
+# Node that runs `ceph` commands (bootstrapped first, holds the admin keyring).
+# Plays default to ceph01 in `hosts:`: keep them in step if this changes.
+ceph_admin_host: ceph01
+
+# OSDs: every empty disk on every host, now and later (runbook option A).
+# ceph-cluster.yml waits for this many OSDs before creating the pools.
+ceph_osd_all_available_devices: true
+ceph_osd_expected: 6
+
+# RBD pools for OpenStack: 3 copies (one per host), I/O continues with 2
+ceph_pools:
+  - { name: images, pg_num: 32, size: 3, min_size: 2, application: rbd }    # Glance
+  - { name: volumes, pg_num: 32, size: 3, min_size: 2, application: rbd }   # Cinder
+  - { name: vms, pg_num: 32, size: 3, min_size: 2, application: rbd }       # Nova ephemeral disks
+
+# CephX users. Nova reuses client.cinder (vms + copy-on-write clones of images).
+ceph_clients:
+  - name: client.glance
+    caps:
+      mon: profile rbd
+      osd: profile rbd pool=images
+      mgr: profile rbd pool=images
+  - name: client.cinder
+    caps:
+      mon: profile rbd
+      osd: profile rbd pool=volumes, profile rbd pool=vms, profile rbd-read-only pool=images
+      mgr: profile rbd pool=volumes, profile rbd pool=vms
+
+# Keyrings written on the deploy VM for Kolla (paths under /etc/kolla)
+ceph_kolla_keyrings:
+  - { client: client.glance, dest: config/glance/ceph.client.glance.keyring }
+  - { client: client.cinder, dest: config/cinder/cinder-volume/ceph.client.cinder.keyring }
+  - { client: client.cinder, dest: config/nova/ceph.client.cinder.keyring }

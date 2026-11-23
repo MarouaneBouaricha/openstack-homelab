@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+# cephadm service specs rendered from inventory/hosts.yml (ceph_nodes, ceph_labels)
+# and inventory/group_vars/ceph_nodes.yml. Applied with: ceph orch apply -i {{ ceph_spec_path }}
+{% set nodes = groups['ceph_nodes'] %}
+{% for host in nodes %}
+---
+service_type: host
+hostname: {{ hostvars[host].node_hostname | default(host) }}
+addr: {{ hostvars[host].storage_ip }}
+labels:
+{% for label in hostvars[host].ceph_labels | default([]) %}
+  - {{ label }}
+{% endfor %}
+{% endfor %}
+---
+service_type: mon
+placement:
+  hosts:
+{% for host in nodes if 'mon' in hostvars[host].ceph_labels | default([]) %}
+    - {{ hostvars[host].node_hostname | default(host) }}
+{% endfor %}
+---
+service_type: mgr
+placement:
+  hosts:
+{% for host in nodes if 'mgr' in hostvars[host].ceph_labels | default([]) %}
+    - {{ hostvars[host].node_hostname | default(host) }}
+{% endfor %}
+{% if ceph_osd_all_available_devices | bool %}
+---
+service_type: osd
+service_id: all-available-devices
+placement:
+  host_pattern: '*'
+spec:
+  data_devices:
+    all: true
+{% endif %}
