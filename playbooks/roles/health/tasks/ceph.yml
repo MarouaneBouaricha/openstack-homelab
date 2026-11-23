@@ -1,0 +1,64 @@
+---
+# Ceph admin node (ceph01): cluster health, quorum, OSDs, PGs, capacity,
+# daemons, crashes. Read-only commands, run even in check mode.
+
+- name: Ceph | read cluster state
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - ceph status -f json
+    - ceph osd df -f json
+    - ceph orch ps -f json
+    - ceph crash ls-new -f json
+  register: health_ceph
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Ceph | record results
+  ansible.builtin.set_fact:
+    health_results: >-
+      {{ health_results | default([]) + ([
+           {'area': 'ceph', 'check': 'health',
+            'status': {'HEALTH_OK': 'PASS', 'HEALTH_WARN': 'WARN'}.get(_health.status | default(''), 'FAIL'),
+            'detail': (_health.status | default('ceph CLI failed: ' ~ _raw[0].stderr | default('')))
+                      ~ ((' ' ~ (_health.checks | default({}) | list | join(', '))) if _health.checks | default({}) else '')},
+           {'area': 'ceph', 'check': 'mon quorum',
+            'status': 'PASS' if (_status.quorum_names | default([]) | length) == (_status.monmap.num_mons | default(-1)) else 'FAIL',
+            'detail': (_status.quorum_names | default([]) | join(', ')) ~ ' of ' ~ (_status.monmap.num_mons | default('?'))},
+           {'area': 'ceph', 'check': 'osds up/in',
+            'status': 'PASS' if (_osdmap.num_osds | default(0) > 0
+                                 and _osdmap.num_up_osds | default(-1) == _osdmap.num_osds
+                                 and _osdmap.num_in_osds | default(-1) == _osdmap.num_osds) else 'FAIL',
+            'detail': (_osdmap.num_up_osds | default('?')) ~ ' up, ' ~ (_osdmap.num_in_osds | default('?'))
+                      ~ ' in, of ' ~ (_osdmap.num_osds | default('?'))},
+           {'area': 'ceph', 'check': 'pgs',
+            'status': 'PASS' if (_clean_pgs == _pgmap.num_pgs | default(-1)) else 'FAIL',
+            'detail': (_pgmap.pgs_by_state | default([]) | map(attribute='state_name')
+                       | zip(_pgmap.pgs_by_state | default([]) | map(attribute='count')) | map('join', '=') | join(', '))},
+           {'area': 'ceph', 'check': 'osd usage',
+            'status': 'PASS' if (_osd_max_pct | float < health_osd_max_pct | float) else 'WARN',
+            'detail': 'fullest OSD ' ~ (_osd_max_pct | float | round(1)) ~ '% (limit ' ~ health_osd_max_pct ~ '%)'},
+           {'area': 'ceph', 'check': 'daemons',
+            'status': 'PASS' if (_daemons | length > 0 and _daemons_down | length == 0) else 'FAIL',
+            'detail': ('not running: ' ~ (_daemons_down | join(', '))) if _daemons_down
+                      else ((_daemons | length) ~ ' running')},
+           {'area': 'ceph', 'check': 'crashes',
+            'status': 'PASS' if (_crashes | length == 0) else 'WARN',
+            'detail': ((_crashes | length) ~ ' new (ceph crash ls-new)') if _crashes else ''}
+         ]) }}
+  vars:
+    _raw: "{{ health_ceph.results }}"
+    _status: "{{ (_raw[0].stdout | from_json) if _raw[0].rc == 0 else {} }}"
+    _health: "{{ _status.health | default({}) }}"
+    _osdmap: "{{ _status.osdmap | default({}) }}"
+    _pgmap: "{{ _status.pgmap | default({}) }}"
+    _clean_pgs: >-
+      {{ _pgmap.pgs_by_state | default([]) | selectattr('state_name', 'equalto', 'active+clean')
+         | map(attribute='count') | sum }}
+    _osd_max_pct: >-
+      {{ ((_raw[1].stdout | from_json).nodes | map(attribute='utilization') | max)
+         if _raw[1].rc == 0 and (_raw[1].stdout | from_json).nodes else 0 }}
+    _daemons: "{{ (_raw[2].stdout | from_json) if _raw[2].rc == 0 else [] }}"
+    _daemons_down: >-
+      {{ _daemons | rejectattr('status_desc', 'equalto', 'running') | map(attribute='daemon_name') | list }}
+    _crashes: "{{ (_raw[3].stdout | from_json) if _raw[3].rc == 0 else [] }}"

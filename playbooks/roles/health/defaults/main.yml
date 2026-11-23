@@ -1,0 +1,15 @@
+---
+# --- nodes --------------------------------------------------------------------
+# Ceph's MON clock-skew limit is 0.05 s
+health_max_clock_offset: 0.05
+health_min_root_free_pct: 15
+
+# --- ceph ---------------------------------------------------------------------
+# With 2 OSDs per host, the surviving OSD takes its sibling's data: stay below
+# ~40% so it remains under the 85% nearfull ratio (ceph/OPERATIONS.md, Capacity)
+health_osd_max_pct: 40
+
+# --- openstack ----------------------------------------------------------------
+health_openstack_cli: "{{ lookup('env', 'HOME') }}/venv-2026.1/bin/openstack"
+health_openrc: /etc/kolla/admin-openrc.sh
+health_keystone_url: "http://{{ kolla_internal_vip_address }}:5000/v3"

@@ -1,0 +1,76 @@
+---
+# Every host: reachable, time in sync, disk space, NICs and IPs, pending reboot.
+# Results go to health_results ({area, check, status, detail}); nothing fails here.
+
+- name: Nodes | reachable over SSH
+  ansible.builtin.ping:
+  register: health_ping
+  ignore_unreachable: true
+
+- name: Nodes | record an unreachable host
+  ansible.builtin.set_fact:
+    health_results: >-
+      {{ health_results | default([]) + [{'area': 'node', 'check': 'reachable', 'status': 'FAIL',
+         'detail': health_ping.msg | default('unreachable')}] }}
+  when: health_ping.unreachable | default(false)
+
+- name: Nodes | stop here for an unreachable host
+  ansible.builtin.meta: end_host
+  when: health_ping.unreachable | default(false)
+
+- name: Nodes | gather network and mount facts
+  ansible.builtin.setup:
+    gather_subset: [min, network, hardware]
+
+- name: Nodes | chrony tracking
+  ansible.builtin.command: chronyc -n tracking
+  register: health_chrony
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Nodes | pending reboot
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+    get_checksum: false
+  register: health_reboot
+
+- name: Nodes | record results
+  ansible.builtin.set_fact:
+    health_results: >-
+      {{ health_results | default([]) + [
+           {'area': 'node', 'check': 'reachable', 'status': 'PASS', 'detail': ''},
+           {'area': 'node', 'check': 'clock',
+            'status': 'PASS' if (_synced | bool and _offset | float < health_max_clock_offset | float) else 'FAIL',
+            'detail': ('offset ' ~ _offset ~ ' s') if _synced | bool else 'chrony not synchronised'},
+           {'area': 'node', 'check': 'disk /',
+            'status': 'PASS' if _root_free_pct | float >= health_min_root_free_pct | float else 'FAIL',
+            'detail': (_root_free_pct | float | round(1)) ~ '% free'},
+           {'area': 'node', 'check': 'nics',
+            'status': 'PASS' if (_nics_down | length == 0) else 'FAIL',
+            'detail': ('down or missing: ' ~ (_nics_down | join(', '))) if _nics_down else (_nics | join(', '))},
+           {'area': 'node', 'check': 'ips',
+            'status': 'PASS' if (_ips_missing | length == 0) else 'FAIL',
+            'detail': ('missing: ' ~ (_ips_missing | join(', '))) if _ips_missing else (_ips | join(', '))},
+           {'area': 'node', 'check': 'reboot',
+            'status': 'WARN' if health_reboot.stat.exists else 'PASS',
+            'detail': 'reboot required' if health_reboot.stat.exists else ''}
+         ] }}
+  vars:
+    _tracking: "{{ health_chrony.stdout_lines | default([]) }}"
+    _synced: >-
+      {{ health_chrony.rc == 0
+         and (_tracking | select('match', 'Leap status') | first | default('')) is search('Normal') }}
+    _offset: >-
+      {{ ((_tracking | select('match', 'System time') | first | default('System time : 99')).split(':')[1].split()[0])
+         | float }}
+    _root: "{{ ansible_facts.mounts | selectattr('mount', 'equalto', '/') | first }}"
+    _root_free_pct: "{{ (_root.size_available / _root.size_total * 100) | float }}"
+    _nics: >-
+      {{ [nat_interface, mgmt_interface, storage_interface, provider_interface] | select('string') | list }}
+    _nics_up: >-
+      {{ _nics | select('in', ansible_facts.interfaces) | map('extract', ansible_facts)
+         | selectattr('active') | map(attribute='device') | list }}
+    _nics_down: "{{ _nics | reject('in', _nics_up) | list }}"
+    _ips: "{{ [mgmt_ip | default(none), storage_ip | default(none)] | select('string') | list }}"
+    _ips_missing: "{{ _ips | reject('in', ansible_facts.all_ipv4_addresses) | list }}"

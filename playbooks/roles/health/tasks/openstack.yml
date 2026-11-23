@@ -1,0 +1,87 @@
+---
+# Deploy VM: OpenStack services seen through the API, and Keystone on the VIP.
+
+- name: OpenStack | Keystone answers on the VIP
+  ansible.builtin.uri:
+    url: "{{ health_keystone_url }}"
+    timeout: 10
+  register: health_keystone
+  failed_when: false
+  check_mode: false
+
+- name: OpenStack | check the CLI and admin credentials
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  loop: ["{{ health_openstack_cli }}", "{{ health_openrc }}"]
+  register: health_cli_files
+
+- name: OpenStack | list services and agents
+  ansible.builtin.shell: >-
+    . {{ health_openrc }} && {{ health_openstack_cli }} {{ item }} -f json
+  args:
+    executable: /bin/bash
+  loop:
+    - compute service list
+    - network agent list
+    - volume service list
+  register: health_os
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: health_cli_files.results | map(attribute='stat.exists') | min
+
+- name: OpenStack | record results
+  ansible.builtin.set_fact:
+    health_results: >-
+      {{ health_results | default([]) + [
+           {'area': 'openstack', 'check': 'keystone VIP',
+            'status': 'PASS' if health_keystone.status | default(-1) == 200 else 'FAIL',
+            'detail': health_keystone_url ~ ' -> ' ~ health_keystone.status | default('no answer')}
+         ] + (_api if _cli_ok else [
+           {'area': 'openstack', 'check': 'api',
+            'status': 'FAIL', 'detail': 'missing ' ~ (_missing | join(', '))}
+         ]) }}
+  vars:
+    _missing: >-
+      {{ health_cli_files.results | rejectattr('stat.exists') | map(attribute='item') | list }}
+    _cli_ok: "{{ _missing | length == 0 }}"
+    _r: "{{ health_os.results | default([]) }}"
+    _compute: "{{ (_r[0].stdout | from_json) if _cli_ok and _r[0].rc == 0 else [] }}"
+    _network: "{{ (_r[1].stdout | from_json) if _cli_ok and _r[1].rc == 0 else [] }}"
+    _volume: "{{ (_r[2].stdout | from_json) if _cli_ok and _r[2].rc == 0 else [] }}"
+    _compute_down: >-
+      {{ _compute | rejectattr('State', 'equalto', 'up') | map(attribute='Binary')
+         | zip(_compute | rejectattr('State', 'equalto', 'up') | map(attribute='Host')) | map('join', '@') | list }}
+    _compute_disabled: >-
+      {{ _compute | selectattr('Status', 'equalto', 'disabled') | map(attribute='Binary')
+         | zip(_compute | selectattr('Status', 'equalto', 'disabled') | map(attribute='Host')) | map('join', '@') | list }}
+    _network_down: >-
+      {{ _network | rejectattr('Alive') | map(attribute='Binary')
+         | zip(_network | rejectattr('Alive') | map(attribute='Host')) | map('join', '@') | list }}
+    _volume_down: >-
+      {{ _volume | rejectattr('State', 'equalto', 'up') | map(attribute='Binary')
+         | zip(_volume | rejectattr('State', 'equalto', 'up') | map(attribute='Host')) | map('join', '@') | list }}
+    _api:
+      - area: openstack
+        check: compute services
+        status: >-
+          {{ 'FAIL' if (_r[0].rc != 0 or _compute | length == 0 or _compute_down)
+             else ('WARN' if _compute_disabled else 'PASS') }}
+        detail: >-
+          {{ (_r[0].stderr | default('') | trim) if _r[0].rc != 0
+             else (('down: ' ~ (_compute_down | join(', '))) if _compute_down
+                   else (('disabled: ' ~ (_compute_disabled | join(', '))) if _compute_disabled
+                         else ((_compute | length) ~ ' up'))) }}
+      - area: openstack
+        check: network agents
+        status: "{{ 'FAIL' if (_r[1].rc != 0 or _network | length == 0 or _network_down) else 'PASS' }}"
+        detail: >-
+          {{ (_r[1].stderr | default('') | trim) if _r[1].rc != 0
+             else (('dead: ' ~ (_network_down | join(', '))) if _network_down else ((_network | length) ~ ' alive')) }}
+      - area: openstack
+        check: volume services
+        status: "{{ 'FAIL' if (_r[2].rc != 0 or _volume | length == 0 or _volume_down) else 'PASS' }}"
+        detail: >-
+          {{ (_r[2].stderr | default('') | trim) if _r[2].rc != 0
+             else (('down: ' ~ (_volume_down | join(', '))) if _volume_down else ((_volume | length) ~ ' up')) }}

@@ -1,0 +1,21 @@
+---
+# Deploy VM: one table for the whole lab; the run fails if any check failed.
+
+- name: Report | results
+  ansible.builtin.debug:
+    msg: |
+      {% for host in groups['all'] %}{% for r in hostvars[host].health_results | default([]) %}
+      {{ '%-4s  %-10s  %-9s  %-16s  %s' | format(r.status, host, r.area, r.check, r.detail) }}
+      {% endfor %}{% endfor %}
+
+- name: Report | fail on any failed check
+  ansible.builtin.assert:
+    that: _results | selectattr('status', 'equalto', 'FAIL') | list | length == 0
+    fail_msg: >-
+      Failed:{% for host in groups['all'] %}{% for r in hostvars[host].health_results | default([])
+      if r.status == 'FAIL' %} {{ host }}/{{ r.check }}{% endfor %}{% endfor %}
+    success_msg: >-
+      No failed checks, {{ _results | selectattr('status', 'equalto', 'WARN') | list | length }} warning(s)
+  vars:
+    _results: >-
+      {{ groups['all'] | map('extract', hostvars) | map(attribute='health_results', default=[]) | flatten(levels=1) }}
