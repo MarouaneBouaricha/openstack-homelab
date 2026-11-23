@@ -1,6 +1,11 @@
 ---
 # OpenStack nodes: every Kolla container running and not unhealthy.
 
+- name: Containers | reachable
+  ansible.builtin.import_tasks: reachable.yml
+  vars:
+    health_area: openstack
+
 - name: Containers | list containers
   ansible.builtin.command: docker ps -a --format json
   register: health_docker

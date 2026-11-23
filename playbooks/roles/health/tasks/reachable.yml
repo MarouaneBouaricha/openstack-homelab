@@ -1,0 +1,20 @@
+---
+# Imported first by every check file: an unreachable host is recorded as a
+# FAIL and leaves the play, instead of aborting the run before the report.
+# health_area: area name used in the result
+
+- name: Reachable | SSH to {{ inventory_hostname }}
+  ansible.builtin.ping:
+  register: health_ping
+  ignore_unreachable: true
+
+- name: Reachable | record an unreachable host
+  ansible.builtin.set_fact:
+    health_results: >-
+      {{ health_results | default([]) + [{'area': health_area, 'check': 'reachable', 'status': 'FAIL',
+         'detail': (health_ping.msg | default('unreachable') | regex_replace('^.*ssh: ', '') | trim)[:80] | trim}] }}
+  when: health_ping.unreachable | default(false)
+
+- name: Reachable | stop here for an unreachable host
+  ansible.builtin.meta: end_host
+  when: health_ping.unreachable | default(false)

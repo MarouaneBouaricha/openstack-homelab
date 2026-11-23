@@ -40,7 +40,9 @@
             'detail': health_keystone_url ~ ' -> ' ~ health_keystone.status | default('no answer')}
          ] + (_api if _cli_ok else [
            {'area': 'openstack', 'check': 'api',
-            'status': 'FAIL', 'detail': 'missing ' ~ (_missing | join(', '))}
+            'status': 'FAIL',
+            'detail': 'missing ' ~ (_missing | join(', '))
+                      ~ ' (CLI: uv pip install python-openstackclient in ~/venv-2026.1; openrc: kolla-ansible post-deploy)'}
          ]) }}
   vars:
     _missing: >-

@@ -2,6 +2,11 @@
 # Ceph admin node (ceph01): cluster health, quorum, OSDs, PGs, capacity,
 # daemons, crashes. Read-only commands, run even in check mode.
 
+- name: Ceph | reachable
+  ansible.builtin.import_tasks: reachable.yml
+  vars:
+    health_area: ceph
+
 - name: Ceph | read cluster state
   ansible.builtin.command: "{{ item }}"
   loop:

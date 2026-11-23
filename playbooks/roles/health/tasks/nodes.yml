@@ -2,21 +2,10 @@
 # Every host: reachable, time in sync, disk space, NICs and IPs, pending reboot.
 # Results go to health_results ({area, check, status, detail}); nothing fails here.
 
-- name: Nodes | reachable over SSH
-  ansible.builtin.ping:
-  register: health_ping
-  ignore_unreachable: true
-
-- name: Nodes | record an unreachable host
-  ansible.builtin.set_fact:
-    health_results: >-
-      {{ health_results | default([]) + [{'area': 'node', 'check': 'reachable', 'status': 'FAIL',
-         'detail': health_ping.msg | default('unreachable')}] }}
-  when: health_ping.unreachable | default(false)
-
-- name: Nodes | stop here for an unreachable host
-  ansible.builtin.meta: end_host
-  when: health_ping.unreachable | default(false)
+- name: Nodes | reachable
+  ansible.builtin.import_tasks: reachable.yml
+  vars:
+    health_area: node
 
 - name: Nodes | gather network and mount facts
   ansible.builtin.setup:
