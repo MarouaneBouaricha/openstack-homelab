@@ -2,8 +2,9 @@
 - name: Passwordless sudo for {{ sudo_nopasswd_user }}
   ansible.builtin.copy:
     dest: /etc/sudoers.d/{{ sudo_nopasswd_user }}
+    # ansible_managed only exists in the template module, not in copy content
     content: |
-      # {{ ansible_managed }}
+      # Managed by openstack-homelab (playbooks/roles/sudo_nopasswd)
       {{ sudo_nopasswd_user }} ALL=(ALL) NOPASSWD:ALL
     owner: root
     group: root
