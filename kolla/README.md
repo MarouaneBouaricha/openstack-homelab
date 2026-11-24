@@ -76,6 +76,7 @@ Settings in `globals.yml` that matter for this lab:
 | `openstack_release` | `2026.1` | |
 | `kolla_internal_vip_address` | `10.0.0.100` | HAProxy/keepalived VIP on the management network |
 | `network_interface` / `storage_interface` / `neutron_external_interface` | `mgmt01` / `stor01` / `prov01` | NIC names set by [netplan](../netplan/README.md) |
+| `openstack_service_workers` / `openstack_service_rpc_workers` | `1` / `1` | One process per API and RPC service instead of one per vCPU: with the defaults the 8 GB controller ran out of memory (swap full, MariaDB OOM-killed) |
 | `kolla_test_images` | `yes` | Images come from `quay.io/openstack.kolla`; since 2026.1 the prechecks refuse them otherwise (same as `--use-test-images`) |
 | `glance_backend_ceph`, `cinder_backend_ceph`, `nova_backend_ceph` | `yes` | External Ceph for images, volumes and VM disks |
 | `ceph_nova_user` | `cinder` | Nova reuses `client.cinder` (no separate Nova user) |

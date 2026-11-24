@@ -60,6 +60,13 @@ kolla_internal_vip_address: "10.0.0.100"
 # lab); same as passing --use-test-images to every kolla-ansible command.
 kolla_test_images: "yes"
 
+# Lab sizing: one API worker and one RPC worker per service, instead of one per
+# vCPU (defaults: min(vCPUs, 5) and min(vCPUs, 3)). With the defaults the
+# 4-vCPU / 8 GB controller ran out of memory: 60 uwsgi processes, swap full,
+# MariaDB killed by the OOM killer.
+openstack_service_workers: "1"
+openstack_service_rpc_workers: "1"
+
 # This is the DNS name that maps to the kolla_internal_vip_address VIP. By
 # default it is the same as kolla_internal_vip_address.
 #kolla_internal_fqdn: "{{ kolla_internal_vip_address }}"
