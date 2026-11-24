@@ -39,7 +39,7 @@
             'detail': (_osdmap.num_up_osds | default('?')) ~ ' up, ' ~ (_osdmap.num_in_osds | default('?'))
                       ~ ' in, of ' ~ (_osdmap.num_osds | default('?'))},
            {'area': 'ceph', 'check': 'pgs',
-            'status': 'PASS' if (_clean_pgs == _pgmap.num_pgs | default(-1)) else 'FAIL',
+            'status': 'PASS' if (_clean_pgs | int == _pgmap.num_pgs | default(-1) | int) else 'FAIL',
             'detail': (_pgmap.pgs_by_state | default([]) | map(attribute='state_name')
                        | zip(_pgmap.pgs_by_state | default([]) | map(attribute='count')) | map('join', '=') | join(', '))},
            {'area': 'ceph', 'check': 'osd usage',
