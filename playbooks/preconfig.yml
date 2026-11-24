@@ -19,9 +19,12 @@
 # --- sudo --------------------------------------------------------------------
 # First, so the plays below (and Kolla-Ansible) no longer need the password
 # on these nodes.
+# No facts needed: one sudoers file per node, so a slow or overloaded node
+# doesn't hold up the others during fact gathering.
 - name: Passwordless sudo | other nodes
   hosts: all:!deployment
   become: true
+  gather_facts: false
   tags: [sudo]
   roles: [sudo_nopasswd]
 
