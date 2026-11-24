@@ -156,9 +156,14 @@ ansible-playbook playbooks/health.yml
 
 | `health.yml` tag | What it checks |
 |------------------|----------------|
-| `nodes` | Every host: reachable, chrony offset < 0.05 s, ≥ 15% free on `/`, renamed NICs up, management/storage IPs present, pending reboot (warning) |
+| `nodes` | Every host: reachable, sudo works (all but the deploy VM), chrony offset < 0.05 s, ≥ 15% free on `/`, renamed NICs up, management/storage IPs present, pending reboot (warning) |
 | `ceph` | On ceph01: HEALTH_OK (warnings listed), MON quorum, OSDs up/in, PGs `active+clean`, fullest OSD < 40%, cephadm daemons running, new crashes (warning) |
 | `openstack` | Kolla containers running and healthy on controller and computes; from the deploy VM: Keystone on the VIP, compute services, network agents and volume services up |
+
+It needs passwordless sudo on the nodes (`preconfig.yml -K --tags sudo`), or
+`-K`. A host that can't be reached, or where sudo fails, shows up as a FAIL
+row: its Ceph or container checks are skipped, and the rest of the report
+still runs.
 
 [kolla/OPERATIONS.md](kolla/OPERATIONS.md) covers running the cloud:
 

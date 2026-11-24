@@ -5,6 +5,8 @@
   ansible.builtin.import_tasks: reachable.yml
   vars:
     health_area: openstack
+    health_sudo_check: true
+    health_needs_root: true
 
 - name: Containers | list containers
   ansible.builtin.command: docker ps -a --format json

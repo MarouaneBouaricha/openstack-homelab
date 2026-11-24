@@ -2,8 +2,9 @@
 # =============================================================================
 # Lab health check: read-only, run it before and after every change
 #
-#   nodes      every host: reachable, chrony offset < 0.05 s, / free space,
-#              renamed NICs up, management/storage IPs, pending reboot (warning)
+#   nodes      every host: reachable, sudo (all but the deploy VM), chrony
+#              offset < 0.05 s, / free space, renamed NICs up,
+#              management/storage IPs, pending reboot (warning)
 #   ceph       on the Ceph admin node: HEALTH_OK, MON quorum, OSDs up/in,
 #              PGs active+clean, fullest OSD < 40%, cephadm daemons running,
 #              new crashes (warning)
@@ -12,8 +13,11 @@
 #              network agents and volume services up
 #   (always)   one PASS/WARN/FAIL table; the run fails if any check failed
 #
-# Changes nothing (also safe with --check). No -K: sudo is passwordless on the
-# nodes and the deploy VM part needs no root.
+# Changes nothing (also safe with --check). No -K once preconfig.yml has
+# given passwordless sudo to the nodes (sudo tag); the deploy VM part needs no
+# root. A host that can't be reached, or where sudo fails, is reported as
+# FAIL and its ceph/openstack checks are skipped: the report still runs. Add
+# -K to use a sudo password instead.
 #
 # Run from the repo root on the deploy VM:
 #   ansible-playbook playbooks/health.yml

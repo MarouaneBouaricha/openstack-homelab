@@ -1,10 +1,15 @@
 ---
-# Imported first by every check file: an unreachable host is recorded as a
-# FAIL and leaves the play, instead of aborting the run before the report.
-# health_area: area name used in the result
+# Imported first by every check file. An unreachable host, or one where sudo
+# fails, is recorded as a FAIL instead of aborting the run before the report.
+#   health_area        area name used in the results
+#   health_sudo_check  test sudo and record the result (default: false)
+#   health_needs_root  the checks that follow need sudo: leave the play when
+#                      it fails (default: false)
 
+# Plain SSH, never sudo: tests reachability only
 - name: Reachable | SSH to {{ inventory_hostname }}
   ansible.builtin.ping:
+  become: false
   register: health_ping
   ignore_unreachable: true
 
@@ -18,3 +23,31 @@
 - name: Reachable | stop here for an unreachable host
   ansible.builtin.meta: end_host
   when: health_ping.unreachable | default(false)
+
+# Uses -K when given; otherwise needs passwordless sudo (preconfig.yml, sudo tag).
+# A missing sudo password is a task failure: ignore_errors, then record it.
+- name: Reachable | sudo works
+  ansible.builtin.command: "true"
+  become: true
+  register: health_sudo
+  changed_when: false
+  check_mode: false
+  ignore_errors: true
+  when: health_sudo_check | default(false) | bool
+
+- name: Reachable | record sudo
+  ansible.builtin.set_fact:
+    health_results: >-
+      {{ health_results | default([]) + [{'area': health_area, 'check': 'sudo',
+         'status': 'FAIL' if health_sudo is failed else 'PASS',
+         'detail': ((health_sudo.msg | default('sudo failed') | regex_replace('^Task failed: ', ''))
+                    ~ ' for ' ~ ansible_user ~ ': run preconfig.yml -K --tags sudo, or add -K'
+                    ~ (' (' ~ health_area ~ ' checks skipped)' if health_needs_root | default(false) | bool else ''))
+                   if health_sudo is failed else ''}] }}
+  when: health_sudo_check | default(false) | bool
+
+- name: Reachable | stop here when the checks need sudo and it failed
+  ansible.builtin.meta: end_host
+  when:
+    - health_needs_root | default(false) | bool
+    - health_sudo is failed

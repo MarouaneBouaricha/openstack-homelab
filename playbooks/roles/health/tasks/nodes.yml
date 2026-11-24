@@ -6,6 +6,8 @@
   ansible.builtin.import_tasks: reachable.yml
   vars:
     health_area: node
+    # the deploy VM is not set up for passwordless sudo (it runs Ansible)
+    health_sudo_check: "{{ inventory_hostname not in groups['deployment'] }}"
 
 - name: Nodes | gather network and mount facts
   ansible.builtin.setup:

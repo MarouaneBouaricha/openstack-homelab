@@ -6,6 +6,8 @@
   ansible.builtin.import_tasks: reachable.yml
   vars:
     health_area: ceph
+    health_sudo_check: true
+    health_needs_root: true
 
 - name: Ceph | read cluster state
   ansible.builtin.command: "{{ item }}"
