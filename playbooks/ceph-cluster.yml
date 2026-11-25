@@ -13,6 +13,9 @@
 #              empty disk) and `ceph orch apply`s it when it changed, after
 #              saving `ceph orch ls --export` to /root/ceph-backups/; then
 #              waits for ceph_osd_expected OSDs
+#   config     sets the ceph_config options (`ceph config set`) whose stored
+#              value differs and removes host-level overrides of them
+#              (e.g. cephadm's per-host osd_memory_target)
 #   pools, users, clients
 #              RBD pools, CephX users, Kolla keyrings and ceph.conf check
 #              (ceph-pools.yml)
@@ -21,6 +24,7 @@
 #   ansible-playbook playbooks/ceph-cluster.yml --check --diff     # preview
 #   ansible-playbook playbooks/ceph-cluster.yml -e ceph_dashboard_password='...'
 #   ansible-playbook playbooks/ceph-cluster.yml --tags specs       # after an inventory change
+#   ansible-playbook playbooks/ceph-cluster.yml --tags config      # after a ceph_config change
 # No -K: sudo is passwordless on the Ceph nodes (preconfig.yml, sudo tag).
 # =============================================================================
 - name: Ceph cluster | bootstrap
@@ -39,6 +43,13 @@
   gather_facts: false
   tags: [specs]
   roles: [ceph_specs]
+
+- name: Ceph cluster | config database
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  tags: [config]
+  roles: [ceph_config]
 
 - name: Ceph cluster | pools, users, Kolla client files
   ansible.builtin.import_playbook: ceph-pools.yml

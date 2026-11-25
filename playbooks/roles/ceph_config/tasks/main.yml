@@ -1,0 +1,39 @@
+---
+# Converge Ceph's central config database to ceph_config:
+#  - sets each option whose stored value differs (or that is not stored yet)
+#  - removes host-level overrides (<who>/host:<name>) of those options that
+#    ceph_config does not list itself, e.g. the per-host osd_memory_target
+#    cephadm's memory autotuning writes. Other options are left alone.
+
+- name: Config | read the config database
+  ansible.builtin.command: ceph config dump -f json
+  register: ceph_config_dump
+  changed_when: false
+  check_mode: false
+
+# who = "<section>" or "<section>/<mask>"; the dump stores them apart (mask "" when none)
+- name: Config | set options that differ
+  ansible.builtin.command: ceph config set {{ item.who }} {{ item.name }} {{ item.value }}
+  loop: "{{ ceph_config }}"
+  loop_control:
+    label: "{{ item.who }} {{ item.name }}={{ item.value }}"
+  when: >-
+    ceph_config_dump.stdout | from_json
+    | selectattr('section', 'equalto', item.who.split('/')[0])
+    | selectattr('mask', 'equalto', (item.who.split('/', 1) + [''])[1])
+    | selectattr('name', 'equalto', item.name)
+    | map(attribute='value') | map('string') | list
+    != [item.value | string]
+  changed_when: true
+
+- name: Config | remove host-level overrides of managed options
+  ansible.builtin.command: ceph config rm {{ item.section }}/{{ item.mask }} {{ item.name }}
+  loop: >-
+    {{ ceph_config_dump.stdout | from_json
+       | selectattr('mask', 'match', 'host:')
+       | selectattr('name', 'in', ceph_config | map(attribute='name') | list)
+       | list }}
+  loop_control:
+    label: "{{ item.section }}/{{ item.mask }} {{ item.name }}={{ item.value }}"
+  when: (item.section ~ '/' ~ item.mask) not in (ceph_config | map(attribute='who') | list)
+  changed_when: true

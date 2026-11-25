@@ -16,6 +16,16 @@ ceph_admin_host: ceph01
 ceph_osd_all_available_devices: true
 ceph_osd_expected: 6
 
+# Central config database (`ceph config set`), ceph-cluster.yml --tags config.
+# Values as `ceph config dump` stores them (sizes in bytes).
+# OSD memory: each VM has 7.7 GiB for 2 OSDs + MON (+ MGR, RGW). cephadm's
+# autotuning gave ceph03 ~1.1 GiB per OSD but left ceph01/ceph02 at the 4 GiB
+# default (8 GiB of OSD cache on a 7.7 GiB VM). Fixed instead: 2 x 1.5 GiB.
+# The role also drops autotuning's per-host osd/host:<node> values.
+ceph_config:
+  - { who: osd, name: osd_memory_target_autotune, value: "false" }
+  - { who: osd, name: osd_memory_target, value: "1610612736" }   # 1.5 GiB
+
 # RBD pools for OpenStack: 3 copies (one per host), I/O continues with 2
 ceph_pools:
   - { name: images, pg_num: 32, size: 3, min_size: 2, application: rbd }    # Glance

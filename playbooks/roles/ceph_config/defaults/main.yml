@@ -1,0 +1,5 @@
+---
+# Options for Ceph's central config database (`ceph config set <who> <name> <value>`).
+# Set in inventory/group_vars/ceph_nodes.yml. Each item: who (osd, mon, global,
+# osd/host:ceph03, ...), name, value as `ceph config dump` stores it (sizes in bytes).
+ceph_config: []

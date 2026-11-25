@@ -122,7 +122,8 @@ ansible-playbook playbooks/ceph-cluster.yml -e ceph_dashboard_password='<dashboa
 
 `ceph-cluster.yml` bootstraps ceph01, distributes cephadm's root SSH key
 (`ceph-ssh.yml`), applies the hosts, MONs, MGRs and OSDs from the inventory,
-then creates the pools and users (`ceph-pools.yml`). Its tags are described in
+sets the `ceph_config` options (OSD memory), then creates the pools and users
+(`ceph-pools.yml`). Its tags are described in
 [ceph/README.md](ceph/README.md).
 
 | `ceph-prereqs.yml` tag | What it does |

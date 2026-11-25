@@ -52,6 +52,7 @@ the password.
 | `bootstrap` | 1 | `cephadm bootstrap` on ceph01: first MON + MGR, dashboard. Skipped when `/etc/ceph/ceph.conf` and the admin keyring exist, so re-runs on the live cluster are safe |
 | `sshd`, `authkey`, `check` | 2 | [ceph-ssh.yml](../playbooks/ceph-ssh.yml): cephadm's SSH key for root on every Ceph node, then `ceph cephadm check-host` for each |
 | `specs` | 3-4 | Renders `/etc/ceph/cluster-spec.yml` from the inventory: one host entry per node (storage IP, labels), MONs on the `mon` hosts, MGRs on the `mgr` hosts, OSDs on every empty disk (`all-available-devices`). When it changed: saves `ceph orch ls --export` to `/root/ceph-backups/`, prints `ceph orch apply --dry-run`, then applies. Waits for `ceph_osd_expected` OSDs. `-e ceph_spec_force=true` re-applies an unchanged file |
+| `config` | - | Converges Ceph's config database to `ceph_config` in `group_vars/ceph_nodes.yml`: `ceph config set` for options whose stored value differs, then `ceph config rm` of host-level overrides (`osd/host:<node>`) of those options. Sets a fixed `osd_memory_target` (1.5 GiB per OSD) with autotuning off |
 | `pools`, `users`, `clients` | 5-7 | [ceph-pools.yml](../playbooks/ceph-pools.yml), below |
 
 | `ceph-pools.yml` tag | What it does |
@@ -75,6 +76,10 @@ Notes:
 - **OSDs.** `all-available-devices` takes every empty disk, including disks
   added later. A disk is only usable when `ceph orch device ls` shows it
   available (no partitions, no LVM, no filesystem).
+- **OSD memory.** Each OSD sizes its caches to `osd_memory_target`. cephadm's
+  autotuning left ceph01/ceph02 at the 4 GiB default (2 OSDs = 8 GiB on a
+  7.7 GiB VM), so the `config` tag sets 1.5 GiB per OSD for all and turns
+  autotuning off. Raise it with the VMs' RAM.
 - **Pools.** 3 replicas, one per node: I/O continues with one node down
   (`min_size 2`). The PG autoscaler resizes the initial 32 PGs.
 - **Users.** Nova reuses `client.cinder` (it needs `vms` and read access to
