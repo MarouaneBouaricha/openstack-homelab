@@ -28,12 +28,14 @@ ceph_config:
 
 # Object storage (RGW, S3), standalone: local RGW users, no Keystone.
 # ceph-cluster.yml --tags rgw. Gateways run on the hosts labelled `rgw` in
-# hosts.yml and listen on the management network (the client network); the
-# ingress puts haproxy + a keepalived VIP in front of them.
+# hosts.yml. Clients use only the ingress VIP on the management network (the
+# client network); haproxy forwards to the gateways, which listen on the
+# storage network: the dashboard reaches RGW at the daemons' Ceph public
+# address (storage IP) and Reef has no setting to point it elsewhere.
 ceph_rgw_enabled: true
 ceph_rgw_service_id: s3                        # cephadm service rgw.s3
-ceph_rgw_port: 8080                            # each gateway, on its mgmt IP
-ceph_rgw_networks: ["{{ mgmt_network }}"]
+ceph_rgw_port: 8080                            # each gateway, on its storage IP
+ceph_rgw_networks: ["{{ storage_network }}"]
 ceph_rgw_realm: homelab                        # pools are named <zone>.rgw.*
 ceph_rgw_zonegroup: homelab
 ceph_rgw_zone: homelab-a

@@ -88,19 +88,23 @@ Notes:
 
 ## Object storage (RGW, S3)
 
-Standalone S3: RGW users are local to Ceph (no Keystone). Clients reach it on
-the management network, the client network for object storage; the storage
-network stays internal to Ceph.
+Standalone S3: RGW users are local to Ceph (no Keystone). Clients use only the
+VIP on the management network, the client network for object storage; the
+gateways behind it stay on the storage network, internal to Ceph.
 
 ```
-client ──► http://10.0.0.150:80  (keepalived VIP, haproxy on ceph02 + ceph03)
-               └─► rgw.s3 on 10.0.0.60:8080 and 10.0.0.70:8080
+client ──► http://10.0.0.150:80  (keepalived VIP on mgmt01, haproxy on ceph02 + ceph03)
+               └─► rgw.s3 on 10.0.2.60:8080 and 10.0.2.70:8080 (storage network)
                       └─► pools homelab-a.rgw.* (3 replicas, on the existing OSDs)
 ```
 
 - **Placement:** RGW, haproxy and keepalived run on the hosts labelled `rgw`
-  in `inventory/hosts.yml`. Each gateway listens on its management IP
+  in `inventory/hosts.yml`. Each gateway listens on its storage IP
   (`ceph_rgw_networks`), port `ceph_rgw_port`.
+- **Why the storage network:** the dashboard's Object Gateway pages call RGW
+  at the daemons' Ceph public address (the storage IP); Reef has no setting
+  to change it. Gateways bound to the management IP show "The Object Gateway
+  Service is not configured ... Connection refused".
 - **Realm / zonegroup / zone:** `homelab` / `homelab` / `homelab-a`, a
   single-site layout that can grow into multisite. The pools are created by
   RGW on first start and named after the zone (`homelab-a.rgw.*`), plus
@@ -132,7 +136,8 @@ aws --profile ceph --endpoint-url http://10.0.0.150 s3 cp ./file s3://app1-data/
 By hand on ceph01: `ceph orch ls rgw`, `ceph orch ps --daemon-type rgw`,
 `radosgw-admin period get`, `radosgw-admin bucket list`,
 `curl http://10.0.0.150` (an anonymous empty bucket list). The haproxy status
-page is on port `1967` of ceph02 and ceph03.
+page is on port `1967` of ceph02 and ceph03. In the dashboard: Object Gateway
+(Gateways, Users, Buckets), using the `dashboard` RGW user cephadm created.
 
 ## Health checks
 

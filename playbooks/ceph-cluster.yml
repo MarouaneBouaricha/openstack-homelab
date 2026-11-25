@@ -18,8 +18,9 @@
 #              (e.g. cephadm's per-host osd_memory_target)
 #   rgw        standalone S3 (when ceph_rgw_enabled): creates the realm,
 #              zonegroup and zone if missing, renders /etc/ceph/rgw-spec.yml
-#              (RGW on the hosts labelled rgw, bound to the management
-#              network; ingress = haproxy + keepalived VIP ceph_rgw_vip) and
+#              (RGW on the hosts labelled rgw, bound to the storage network;
+#              ingress = haproxy + keepalived VIP ceph_rgw_vip on the
+#              management network, the clients' only entry point) and
 #              applies it like the cluster spec; waits for the daemons
 #   pools, users, clients
 #              RBD pools, CephX users, Kolla keyrings and ceph.conf check
