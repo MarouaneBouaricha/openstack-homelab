@@ -7,7 +7,8 @@
 #              management/storage IPs, pending reboot (warning)
 #   ceph       on the Ceph admin node: HEALTH_OK, MON quorum, OSDs up/in,
 #              PGs active+clean, fullest OSD < 40%, cephadm daemons running,
-#              new crashes (warning)
+#              new crashes (warning); with RGW, every gateway and the
+#              ingress VIP answer an anonymous S3 request (HTTP 200)
 #   openstack  Kolla containers running and healthy on the OpenStack nodes;
 #              from the deploy VM: Keystone on the VIP, compute services,
 #              network agents and volume services up

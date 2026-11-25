@@ -1,0 +1,42 @@
+---
+# Single-site multisite layout: one realm > one master zonegroup > one master
+# zone, all default. Creates only what is missing, then commits the period.
+# The first radosgw-admin call creates the .rgw.root pool.
+
+- name: RGW | list realms, zonegroups and zones
+  ansible.builtin.command: radosgw-admin {{ item }} list
+  loop: [realm, zonegroup, zone]
+  register: ceph_rgw_lists
+  changed_when: false
+  check_mode: false
+
+- name: RGW | create the realm
+  ansible.builtin.command: >-
+    radosgw-admin realm create --rgw-realm={{ ceph_rgw_realm }} --default
+  when: ceph_rgw_realm not in (ceph_rgw_lists.results[0].stdout | from_json).realms
+  register: ceph_rgw_realm_created
+  changed_when: true
+
+- name: RGW | create the master zonegroup
+  ansible.builtin.command: >-
+    radosgw-admin zonegroup create --rgw-realm={{ ceph_rgw_realm }}
+    --rgw-zonegroup={{ ceph_rgw_zonegroup }} --master --default
+  when: ceph_rgw_zonegroup not in (ceph_rgw_lists.results[1].stdout | from_json).zonegroups
+  register: ceph_rgw_zonegroup_created
+  changed_when: true
+
+- name: RGW | create the master zone
+  ansible.builtin.command: >-
+    radosgw-admin zone create --rgw-realm={{ ceph_rgw_realm }}
+    --rgw-zonegroup={{ ceph_rgw_zonegroup }} --rgw-zone={{ ceph_rgw_zone }} --master --default
+  when: ceph_rgw_zone not in (ceph_rgw_lists.results[2].stdout | from_json).zones
+  register: ceph_rgw_zone_created
+  changed_when: true
+
+- name: RGW | commit the period
+  ansible.builtin.command: radosgw-admin period update --rgw-realm={{ ceph_rgw_realm }} --commit
+  when: >-
+    ceph_rgw_realm_created is changed
+    or ceph_rgw_zonegroup_created is changed
+    or ceph_rgw_zone_created is changed
+  changed_when: true

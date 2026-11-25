@@ -69,3 +69,31 @@
     _daemons_down: >-
       {{ _daemons | rejectattr('status_desc', 'equalto', 'running') | map(attribute='daemon_name') | list }}
     _crashes: "{{ (_raw[3].stdout | from_json) if _raw[3].rc == 0 else [] }}"
+
+# Anonymous GET / on each gateway and on the ingress VIP: 200 + an empty bucket list
+- name: Ceph | RGW endpoints answer
+  ansible.builtin.uri:
+    url: "{{ item }}"
+    timeout: 10
+  loop: "{{ health_rgw_urls }}"
+  register: health_rgw
+  failed_when: false
+  check_mode: false
+  when: ceph_rgw_enabled | default(false) | bool
+
+- name: Ceph | record RGW results
+  ansible.builtin.set_fact:
+    health_results: >-
+      {{ health_results + [
+           {'area': 'ceph', 'check': 'rgw endpoints',
+            'status': 'PASS' if (_rgw | length > 0 and _rgw_bad | length == 0) else 'FAIL',
+            'detail': ('no answer: ' ~ (_rgw_bad | join(', '))) if _rgw_bad
+                      else ((_rgw | length) ~ ' answer 200 (' ~ (_rgw | map(attribute='item') | join(', ')) ~ ')')}
+         ] }}
+  vars:
+    _rgw: "{{ health_rgw.results | default([]) }}"
+    _rgw_bad: >-
+      {{ _rgw | rejectattr('status', 'defined') | map(attribute='item') | list
+         + _rgw | selectattr('status', 'defined') | rejectattr('status', 'equalto', 200)
+                | map(attribute='item') | list }}
+  when: ceph_rgw_enabled | default(false) | bool

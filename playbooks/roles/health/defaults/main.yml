@@ -9,6 +9,16 @@ health_min_root_free_pct: 15
 # ~40% so it remains under the 85% nearfull ratio (ceph/OPERATIONS.md, Capacity)
 health_osd_max_pct: 40
 
+# RGW (when ceph_rgw_enabled): each gateway on its mgmt IP, then the ingress VIP
+health_rgw_urls: >-
+  {{ (groups['ceph_nodes'] | map('extract', hostvars)
+      | selectattr('ceph_labels', 'defined') | selectattr('ceph_labels', 'contains', 'rgw')
+      | map(attribute='mgmt_ip')
+      | map('regex_replace', '^', 'http://')
+      | map('regex_replace', '$', ':' ~ ceph_rgw_port | default(8080)) | list)
+     + (['http://' ~ ceph_rgw_vip ~ ':' ~ ceph_rgw_frontend_port | default(80)]
+        if ceph_rgw_ingress_enabled | default(false) | bool else []) }}
+
 # --- openstack ----------------------------------------------------------------
 health_openstack_cli: "{{ lookup('env', 'HOME') }}/venv-2026.1/bin/openstack"
 health_openrc: /etc/kolla/admin-openrc.sh

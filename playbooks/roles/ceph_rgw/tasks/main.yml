@@ -1,0 +1,58 @@
+---
+# Standalone RGW (S3): realm / zonegroup / zone first (the gateways refuse to
+# start without them), then the RGW + ingress specs, applied like the cluster
+# spec (backup, dry run, apply) when the rendered file changes.
+# Never removes a gateway, a zone or a pool: see ceph/README.md.
+
+- name: RGW | check the inventory
+  ansible.builtin.assert:
+    that:
+      - ceph_rgw_hosts | length > 0
+      - ceph_rgw_networks | length > 0
+      - not ceph_rgw_ingress_enabled | bool or ceph_rgw_vip | length > 0
+    fail_msg: >-
+      RGW needs at least one ceph_nodes host labelled rgw (hosts.yml),
+      ceph_rgw_networks and, with the ingress, ceph_rgw_vip.
+    quiet: true
+
+- name: RGW | realm, zonegroup and zone
+  ansible.builtin.import_tasks: realm.yml
+
+- name: RGW | spec template path
+  ansible.builtin.set_fact:
+    ceph_rgw_spec_src: "{{ role_path }}/templates/rgw-spec.yml.j2"
+
+- name: RGW | RGW + ingress specs
+  ansible.builtin.import_role:
+    name: ceph_specs
+    tasks_from: apply
+  vars:
+    ceph_spec_src: "{{ ceph_rgw_spec_src }}"
+    ceph_spec_dest: "{{ ceph_rgw_spec_path }}"
+
+# One rgw (+ haproxy + keepalived) per rgw host. Returns at once when running.
+- name: RGW | wait for the daemons
+  ansible.builtin.command: ceph orch ps --refresh -f json
+  register: ceph_rgw_ps
+  changed_when: false
+  retries: "{{ ceph_rgw_wait_retries }}"
+  delay: "{{ ceph_rgw_wait_delay }}"
+  until: >-
+    ceph_rgw_ps.stdout | from_json
+    | selectattr('daemon_type', 'in', ceph_rgw_daemon_types)
+    | selectattr('status_desc', 'equalto', 'running') | list | length
+    >= ceph_rgw_daemon_types | length * ceph_rgw_hosts | length
+  when: not ansible_check_mode
+  vars:
+    ceph_rgw_daemon_types: "{{ ['rgw'] + (['haproxy', 'keepalived'] if ceph_rgw_ingress_enabled | bool else []) }}"
+
+- name: RGW | daemons
+  ansible.builtin.command: ceph orch ps --service_name {{ item }}
+  loop: "{{ ['rgw.' ~ ceph_rgw_service_id] + (['ingress.rgw.' ~ ceph_rgw_service_id] if ceph_rgw_ingress_enabled | bool else []) }}"
+  register: ceph_rgw_services
+  changed_when: false
+  check_mode: false
+
+- name: RGW | current daemons
+  ansible.builtin.debug:
+    msg: "{{ ceph_rgw_services.results | map(attribute='stdout_lines') | flatten }}"

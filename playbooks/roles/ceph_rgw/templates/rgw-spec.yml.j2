@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+# Standalone RGW (S3) + ingress, rendered from inventory/hosts.yml (hosts
+# labelled rgw) and inventory/group_vars/ceph_nodes.yml (ceph_rgw_*).
+# Applied with: ceph orch apply -i {{ ceph_rgw_spec_path }}
+---
+service_type: rgw
+service_id: {{ ceph_rgw_service_id }}
+placement:
+  hosts:
+{% for host in ceph_rgw_hosts %}
+    - {{ host }}
+{% endfor %}
+networks:
+{% for net in ceph_rgw_networks %}
+  - {{ net }}
+{% endfor %}
+spec:
+  rgw_realm: {{ ceph_rgw_realm }}
+  rgw_zonegroup: {{ ceph_rgw_zonegroup }}
+  rgw_zone: {{ ceph_rgw_zone }}
+  rgw_frontend_port: {{ ceph_rgw_port }}
+{% if ceph_rgw_ingress_enabled | bool %}
+---
+service_type: ingress
+service_id: rgw.{{ ceph_rgw_service_id }}
+placement:
+  hosts:
+{% for host in ceph_rgw_hosts %}
+    - {{ host }}
+{% endfor %}
+spec:
+  backend_service: rgw.{{ ceph_rgw_service_id }}
+  virtual_ip: {{ ceph_rgw_vip }}/{{ ceph_rgw_vip_prefix }}
+  frontend_port: {{ ceph_rgw_frontend_port }}
+  monitor_port: {{ ceph_rgw_monitor_port }}
+{% endif %}

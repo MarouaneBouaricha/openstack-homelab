@@ -1,0 +1,27 @@
+---
+# Standalone RGW (S3). Real values in inventory/group_vars/ceph_nodes.yml.
+ceph_rgw_enabled: false
+ceph_rgw_service_id: s3
+ceph_rgw_port: 8080
+ceph_rgw_networks: []
+ceph_rgw_realm: default
+ceph_rgw_zonegroup: default
+ceph_rgw_zone: default
+ceph_rgw_ingress_enabled: false
+ceph_rgw_vip: ""
+ceph_rgw_vip_prefix: 24
+ceph_rgw_frontend_port: 80
+ceph_rgw_monitor_port: 1967
+
+# Rendered RGW + ingress specs on the admin node
+ceph_rgw_spec_path: /etc/ceph/rgw-spec.yml
+
+# Wait for the gateways after applying: 30 x 10 s
+ceph_rgw_wait_retries: 30
+ceph_rgw_wait_delay: 10
+
+# Hosts labelled rgw in inventory/hosts.yml (by real hostname)
+ceph_rgw_hosts: >-
+  {{ groups['ceph_nodes'] | map('extract', hostvars)
+     | selectattr('ceph_labels', 'defined') | selectattr('ceph_labels', 'contains', 'rgw')
+     | map(attribute='node_hostname') | list }}

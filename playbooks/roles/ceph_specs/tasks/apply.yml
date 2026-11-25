@@ -1,0 +1,48 @@
+---
+# Render one spec file (ceph_spec_src -> ceph_spec_dest) and `ceph orch apply`
+# it when it changed (or ceph_spec_force), after saving the cluster's current
+# specs. Used for cluster-spec.yml (this role) and rgw-spec.yml (ceph_rgw).
+
+- name: Specs | render {{ ceph_spec_dest | basename }}
+  ansible.builtin.template:
+    src: "{{ ceph_spec_src }}"
+    dest: "{{ ceph_spec_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: ceph_spec_file
+
+- name: Specs | apply {{ ceph_spec_dest | basename }}
+  when:
+    - ceph_spec_file is changed or ceph_spec_force | bool
+    - not ansible_check_mode
+  block:
+    - name: Specs | backup directory
+      ansible.builtin.file:
+        path: "{{ ceph_spec_backup_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Specs | save the current specs (ceph orch ls --export)
+      ansible.builtin.shell: >-
+        ceph orch ls --export > {{ ceph_spec_backup_dir }}/specs-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}-{{
+        ceph_spec_dest | basename | splitext | first }}.yml
+      changed_when: true
+
+    - name: Specs | dry run
+      ansible.builtin.command: ceph orch apply -i {{ ceph_spec_dest }} --dry-run
+      register: ceph_spec_dry_run
+      changed_when: false
+
+    - name: Specs | dry run output
+      ansible.builtin.debug:
+        msg: "{{ ceph_spec_dry_run.stdout_lines }}"
+
+    - name: Specs | ceph orch apply
+      ansible.builtin.command: ceph orch apply -i {{ ceph_spec_dest }}
+      register: ceph_spec_apply
+      changed_when: true
+
+    - name: Specs | apply output
+      ansible.builtin.debug:
+        msg: "{{ ceph_spec_apply.stdout_lines }}"

@@ -78,6 +78,7 @@ Everything runs from the **deploy VM**, in a clone of this repo
 | IP addresses, VIP | `inventory/hosts.yml`, `inventory/group_vars/all.yml`, `inventory/multinode`, `kolla/globals.yml`, `netplan/*.yaml` |
 | MAC address of every NIC | `netplan/<host>.yaml` (from each VM's `.vmx`: `ethernet0.address`, `ethernetN.generatedAddress`) |
 | Ceph hosts, labels, OSD policy, pools, users | `inventory/hosts.yml` (`ceph_labels`), `inventory/group_vars/ceph_nodes.yml` (every empty disk becomes an OSD) |
+| S3 gateway (RGW): hosts, port, realm/zone, ingress VIP | `inventory/hosts.yml` (`rgw` label), `inventory/group_vars/ceph_nodes.yml` (`ceph_rgw_*`) |
 | Ceph dashboard password | `-e ceph_dashboard_password=...` on `ceph-cluster.yml` (never committed) |
 
 ### 1. Create the VMs
@@ -122,7 +123,8 @@ ansible-playbook playbooks/ceph-cluster.yml -e ceph_dashboard_password='<dashboa
 
 `ceph-cluster.yml` bootstraps ceph01, distributes cephadm's root SSH key
 (`ceph-ssh.yml`), applies the hosts, MONs, MGRs and OSDs from the inventory,
-sets the `ceph_config` options (OSD memory), then creates the pools and users
+sets the `ceph_config` options (OSD memory), deploys the standalone S3 gateway
+(RGW behind the VIP `10.0.0.150`), then creates the pools and users
 (`ceph-pools.yml`). Its tags are described in
 [ceph/README.md](ceph/README.md).
 
@@ -158,7 +160,7 @@ ansible-playbook playbooks/health.yml
 | `health.yml` tag | What it checks |
 |------------------|----------------|
 | `nodes` | Every host: reachable, sudo works (all but the deploy VM), chrony offset < 0.05 s, ≥ 15% free on `/`, renamed NICs up, management/storage IPs present, pending reboot (warning) |
-| `ceph` | On ceph01: HEALTH_OK (warnings listed), MON quorum, OSDs up/in, PGs `active+clean`, fullest OSD < 40%, cephadm daemons running, new crashes (warning) |
+| `ceph` | On ceph01: HEALTH_OK (warnings listed), MON quorum, OSDs up/in, PGs `active+clean`, fullest OSD < 40%, cephadm daemons running, new crashes (warning); with RGW, each gateway and the ingress VIP answer HTTP 200 |
 | `openstack` | Kolla containers running and healthy on controller and computes; from the deploy VM: Keystone on the VIP, compute services, network agents and volume services up |
 
 It needs passwordless sudo on the nodes (`preconfig.yml -K --tags sudo`), or

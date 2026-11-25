@@ -26,6 +26,23 @@ ceph_config:
   - { who: osd, name: osd_memory_target_autotune, value: "false" }
   - { who: osd, name: osd_memory_target, value: "1610612736" }   # 1.5 GiB
 
+# Object storage (RGW, S3), standalone: local RGW users, no Keystone.
+# ceph-cluster.yml --tags rgw. Gateways run on the hosts labelled `rgw` in
+# hosts.yml and listen on the management network (the client network); the
+# ingress puts haproxy + a keepalived VIP in front of them.
+ceph_rgw_enabled: true
+ceph_rgw_service_id: s3                        # cephadm service rgw.s3
+ceph_rgw_port: 8080                            # each gateway, on its mgmt IP
+ceph_rgw_networks: ["{{ mgmt_network }}"]
+ceph_rgw_realm: homelab                        # pools are named <zone>.rgw.*
+ceph_rgw_zonegroup: homelab
+ceph_rgw_zone: homelab-a
+ceph_rgw_ingress_enabled: true                 # clients use http://<vip>:<frontend port>
+ceph_rgw_vip: 10.0.0.150
+ceph_rgw_vip_prefix: 24
+ceph_rgw_frontend_port: 80
+ceph_rgw_monitor_port: 1967                    # haproxy status page
+
 # RBD pools for OpenStack: 3 copies (one per host), I/O continues with 2
 ceph_pools:
   - { name: images, pg_num: 32, size: 3, min_size: 2, application: rbd }    # Glance

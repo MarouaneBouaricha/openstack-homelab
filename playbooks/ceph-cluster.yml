@@ -16,6 +16,11 @@
 #   config     sets the ceph_config options (`ceph config set`) whose stored
 #              value differs and removes host-level overrides of them
 #              (e.g. cephadm's per-host osd_memory_target)
+#   rgw        standalone S3 (when ceph_rgw_enabled): creates the realm,
+#              zonegroup and zone if missing, renders /etc/ceph/rgw-spec.yml
+#              (RGW on the hosts labelled rgw, bound to the management
+#              network; ingress = haproxy + keepalived VIP ceph_rgw_vip) and
+#              applies it like the cluster spec; waits for the daemons
 #   pools, users, clients
 #              RBD pools, CephX users, Kolla keyrings and ceph.conf check
 #              (ceph-pools.yml)
@@ -25,6 +30,7 @@
 #   ansible-playbook playbooks/ceph-cluster.yml -e ceph_dashboard_password='...'
 #   ansible-playbook playbooks/ceph-cluster.yml --tags specs       # after an inventory change
 #   ansible-playbook playbooks/ceph-cluster.yml --tags config      # after a ceph_config change
+#   ansible-playbook playbooks/ceph-cluster.yml --tags specs,rgw   # after an rgw label change
 # No -K: sudo is passwordless on the Ceph nodes (preconfig.yml, sudo tag).
 # =============================================================================
 - name: Ceph cluster | bootstrap
@@ -50,6 +56,15 @@
   gather_facts: false
   tags: [config]
   roles: [ceph_config]
+
+- name: Ceph cluster | object storage (RGW, S3)
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  tags: [rgw]
+  roles:
+    - role: ceph_rgw
+      when: ceph_rgw_enabled | default(false) | bool
 
 - name: Ceph cluster | pools, users, Kolla client files
   ansible.builtin.import_playbook: ceph-pools.yml

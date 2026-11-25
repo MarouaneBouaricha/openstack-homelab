@@ -1,6 +1,7 @@
 # {{ ansible_managed }}
 # cephadm service specs rendered from inventory/hosts.yml (ceph_nodes, ceph_labels)
 # and inventory/group_vars/ceph_nodes.yml. Applied with: ceph orch apply -i {{ ceph_spec_path }}
+# RGW + ingress are in a separate file (ceph_rgw role): they need the realm first.
 {% set nodes = groups['ceph_nodes'] %}
 {% for host in nodes %}
 ---
