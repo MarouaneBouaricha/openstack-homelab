@@ -9,6 +9,11 @@ ceph_spec_backup_dir: /root/ceph-backups
 # `ceph orch apply` drifted the cluster from the repo)
 ceph_spec_force: false
 
+# After `ceph orch apply`, wait this long and re-apply (up to N times) if
+# cephadm's serve loop saved older specs over the new ones (tasks/apply.yml)
+ceph_spec_settle_delay: 30
+ceph_spec_apply_attempts: 5
+
 # Wait for the OSDs after applying (fresh cluster): 60 x 10 s
 ceph_osd_wait_retries: 60
 ceph_osd_wait_delay: 10

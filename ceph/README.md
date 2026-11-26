@@ -77,6 +77,12 @@ Notes:
 - **OSDs.** `all-available-devices` takes every empty disk, including disks
   added later. A disk is only usable when `ceph orch device ls` shows it
   available (no partitions, no LVM, no filesystem).
+- **Specs that don't stick.** cephadm's serve loop reads the specs at the
+  start of each pass; a pass already running when `ceph orch apply` lands can
+  save the old spec back (seen with the `rgw.s3` networks on Reef 18.2.8). The
+  `specs` and `rgw` tags therefore wait `ceph_spec_settle_delay` (30 s) after
+  applying and re-apply if `ceph orch ls --export` changed meanwhile. By hand:
+  check `ceph orch ls <service> --export` a minute after an apply.
 - **OSD memory.** Each OSD sizes its caches to `osd_memory_target`. cephadm's
   autotuning left ceph01/ceph02 at the 4 GiB default (2 OSDs = 8 GiB on a
   7.7 GiB VM), so the `config` tag sets 1.5 GiB per OSD for all and turns

@@ -38,8 +38,28 @@
       ansible.builtin.debug:
         msg: "{{ ceph_spec_dry_run.stdout_lines }}"
 
-    - name: Specs | ceph orch apply
-      ansible.builtin.command: ceph orch apply -i {{ ceph_spec_dest }}
+    # cephadm's serve loop can still be working on the specs it read before
+    # this apply and save those back over the new ones (seen on Reef 18.2.8:
+    # RgwService.config() re-saves the rgw.s3 spec it was handed, undoing a
+    # networks change). Re-apply until the stored specs stay unchanged for
+    # ceph_spec_settle_delay seconds.
+    - name: Specs | ceph orch apply (re-applied until cephadm keeps it)
+      ansible.builtin.shell: |
+        for i in $(seq {{ ceph_spec_apply_attempts }}); do
+          ceph orch apply -i {{ ceph_spec_dest }} || exit 1
+          before=$(ceph orch ls --export) || exit 1
+          sleep {{ ceph_spec_settle_delay }}
+          after=$(ceph orch ls --export) || exit 1
+          if [ "$before" = "$after" ]; then
+            echo "kept after attempt $i"
+            exit 0
+          fi
+          echo "cephadm changed the stored specs after attempt $i, re-applying"
+        done
+        echo "the stored specs kept changing after {{ ceph_spec_apply_attempts }} attempts" >&2
+        exit 1
+      args:
+        executable: /bin/bash
       register: ceph_spec_apply
       changed_when: true
 
