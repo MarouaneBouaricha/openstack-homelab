@@ -15,7 +15,8 @@
 #              waits for ceph_osd_expected OSDs
 #   config     sets the ceph_config options (`ceph config set`) whose stored
 #              value differs and removes host-level overrides of them
-#              (e.g. cephadm's per-host osd_memory_target)
+#              (e.g. cephadm's per-host osd_memory_target); mutes the
+#              ceph_health_mutes checks (sticky)
 #   rgw        standalone S3 (when ceph_rgw_enabled): creates the realm,
 #              zonegroup and zone if missing, renders /etc/ceph/rgw-spec.yml
 #              (RGW on the hosts labelled rgw, bound to the storage network;

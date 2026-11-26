@@ -1,0 +1,20 @@
+---
+# Ubuntu's installer leaves half of the volume group unallocated. Container
+# images live on / (each Ceph release image is ~2 GB) and the MON warns
+# (MON_DISK_LOW) below 30% free: grow the root LV into all free space.
+# Online, ext4 resized by lvextend -r. Only grows, never shrinks.
+
+- name: Root LV | free space in its volume group (MiB)
+  ansible.builtin.command: lvs --noheadings --nosuffix --units m -o vg_free {{ ceph_root_lv }}
+  register: ceph_root_vg_free
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Root LV | grow into the free space (filesystem resized online)
+  ansible.builtin.command: lvextend -r -l +100%FREE {{ ceph_root_lv }}
+  changed_when: true
+  when:
+    - ceph_extend_root_lv | bool
+    - ceph_root_vg_free.rc == 0
+    - ceph_root_vg_free.stdout | trim | float > 1024

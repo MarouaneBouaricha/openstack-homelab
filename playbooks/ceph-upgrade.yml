@@ -13,7 +13,8 @@
 #              daemon runs the target and require_osd_release, resumes the
 #              autoscaler, waits for HEALTH_OK. Re-running resumes or skips.
 #   packages   download.ceph.com repo of the new release + latest cephadm and
-#              ceph-common on every Ceph node (after the daemons)
+#              ceph-common on every Ceph node (after the daemons), then removes
+#              the images no container uses (the old release, ~2 GB per node)
 #   (always)   versions and the ceph_release line to commit
 #
 # Cannot be undone: Ceph has no downgrade. Take powered-off VM snapshots of
@@ -50,6 +51,20 @@
       vars:
         ceph_release: "{{ ceph_upgrade_to }}"
         ceph_packages_state: latest
+
+    # The previous release's image (~2 GB per node) is no longer used: free /
+    # (MON_DISK_LOW). Only images that no container uses; cephadm re-pulls
+    # anything it needs later.
+    - name: Remove images no container uses
+      ansible.builtin.command: docker image prune --all --force
+      register: ceph_upgrade_prune
+      changed_when: "'Total reclaimed space: 0B' not in ceph_upgrade_prune.stdout"
+      when: ceph_upgrade_prune_images | default(true) | bool
+
+    - name: Reclaimed space
+      ansible.builtin.debug:
+        msg: "{{ ceph_upgrade_prune.stdout_lines | default([]) | last | default('') }}"
+      when: ceph_upgrade_prune is changed
 
 - name: Ceph upgrade | report
   hosts: "{{ ceph_admin_host | default('ceph01') }}"

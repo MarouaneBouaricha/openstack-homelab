@@ -44,6 +44,7 @@ the password.
 
 | `ceph-prereqs.yml` tag | What it does |
 |-----------|--------------|
+| `rootfs`  | Grows the root LV (`/dev/ubuntu-vg/ubuntu-lv`) into the free space of its volume group, online (`lvextend -r`). Ubuntu's installer leaves half the disk unused; container images fill `/` and the MON warns below 30% free (`MON_DISK_LOW`) |
 | `upgrade` | `apt update` + `apt upgrade` |
 | `docker`  | `docker.io` (cephadm's container runtime), enabled and started |
 | `cephadm` | download.ceph.com repo for `ceph_release` (the release the cluster runs, in `inventory/group_vars/ceph_nodes.yml`) + `cephadm` and `ceph-common` |
@@ -54,7 +55,7 @@ the password.
 | `bootstrap` | 1 | `cephadm bootstrap` on ceph01: first MON + MGR, dashboard. Skipped when `/etc/ceph/ceph.conf` and the admin keyring exist, so re-runs on the live cluster are safe |
 | `sshd`, `authkey`, `check` | 2 | [ceph-ssh.yml](../playbooks/ceph-ssh.yml): cephadm's SSH key for root on every Ceph node, then `ceph cephadm check-host` for each |
 | `specs` | 3-4 | Renders `/etc/ceph/cluster-spec.yml` from the inventory: one host entry per node (storage IP, labels), MONs on the `mon` hosts, MGRs on the `mgr` hosts, OSDs on every empty disk (`all-available-devices`). When it changed: saves `ceph orch ls --export` to `/root/ceph-backups/`, prints `ceph orch apply --dry-run`, then applies. Waits for `ceph_osd_expected` OSDs. `-e ceph_spec_force=true` re-applies an unchanged file |
-| `config` | - | Converges Ceph's config database to `ceph_config` in `group_vars/ceph_nodes.yml`: `ceph config set` for options whose stored value differs, then `ceph config rm` of host-level overrides (`osd/host:<node>`) of those options. Sets a fixed `osd_memory_target` (1.5 GiB per OSD) with autotuning off |
+| `config` | - | Converges Ceph's config database to `ceph_config` in `group_vars/ceph_nodes.yml`: `ceph config set` for options whose stored value differs, then `ceph config rm` of host-level overrides (`osd/host:<node>`) of those options. Sets a fixed `osd_memory_target` (1.5 GiB per OSD) with autotuning off. Mutes (sticky) the health checks listed in `ceph_health_mutes`, each with its reason |
 | `rgw` | - | Standalone S3 ([below](#object-storage-rgw-s3)), when `ceph_rgw_enabled`: creates the realm, zonegroup and zone if missing (`radosgw-admin`, then `period update --commit`), renders `/etc/ceph/rgw-spec.yml` (RGW + ingress) and applies it like the cluster spec (backup, dry run, apply when changed), then waits for the rgw / haproxy / keepalived daemons |
 | `pools`, `users`, `clients` | 5-7 | [ceph-pools.yml](../playbooks/ceph-pools.yml), below |
 
@@ -67,7 +68,7 @@ the password.
 | `ceph-upgrade.yml` tag | What it does |
 |------------------------|--------------|
 | `upgrade` | On ceph01, `-e ceph_upgrade_to=<release>`. Preflight (read-only, all of `--check`): target is the next release (no skipping, no downgrade), HEALTH_OK, a standby MGR, no other upgrade running, connected client releases. Then saves the cluster state to `/root/ceph-backups/`, pauses the PG autoscaler, `ceph orch upgrade check` + `start`, waits for cephadm, checks every daemon and `require_osd_release`, resumes the autoscaler, waits for HEALTH_OK. Re-running resumes an upgrade in progress or skips a finished one |
-| `packages` | download.ceph.com repo of the new release + latest `cephadm` and `ceph-common` on every Ceph node, after the daemons |
+| `packages` | download.ceph.com repo of the new release + latest `cephadm` and `ceph-common` on every Ceph node, after the daemons; then removes the images no container uses (the old release, ~2 GB per node) |
 
 Every playbook previews with `--check --diff`, never deletes a pool, a user or
 a host, and needs no `-K` except `ceph-prereqs.yml`.

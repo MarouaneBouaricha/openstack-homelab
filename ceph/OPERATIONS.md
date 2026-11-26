@@ -202,6 +202,18 @@ instance from a Glance image, attach a Cinder volume). Repeat with
   at a time. With 3 replicas and `min_size 2`, I/O continues; each OSD restart
   pauses it for a few seconds. RGW traffic moves to the other gateway via the
   VIP.
+- **CephX key types (squid 19.2.6+, CVE-2025-30156):** after the upgrade the
+  cluster raises `AUTH_INSECURE_*` warnings for keys of type `aes`. cephadm
+  moves the daemon keys to `aes256k` itself; `AUTH_INSECURE_ROTATING_SERVICE_KEY_TYPE`
+  clears within ~1 h. The client keys (admin, bootstrap, crash, exporter,
+  RGW, and OpenStack's `client.glance` / `client.cinder`) stay `aes`, with
+  `aes` still allowed and the three remaining warnings muted
+  (`ceph_health_mutes`, `ceph-cluster.yml --tags config`). Rotating them is a
+  separate step, once OpenStack's librbd is known to support `aes256k`:
+  `ceph auth rotate --key-type=aes256k client.<id>`, then the new keyring
+  wherever the key is used (`ceph-pools.yml --tags clients` + Kolla reconfigure
+  for glance/cinder/nova, including nova's libvirt secret). Only then
+  `ceph mon set auth_allowed_ciphers aes256k` and remove the mutes.
 - **If it stops:** `ceph orch upgrade status` and `ceph health detail`
   (`UPGRADE_*` alerts) say why. Fix it, then re-run the playbook: it resumes.
   `ceph orch upgrade stop` abandons it; the daemons already upgraded stay

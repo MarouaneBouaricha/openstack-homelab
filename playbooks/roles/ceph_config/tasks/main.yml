@@ -26,6 +26,24 @@
     != [item.value | string]
   changed_when: true
 
+# Sticky mutes: kept even when the check clears and comes back. Mutes not in
+# ceph_health_mutes are left alone (unmute by hand: ceph health unmute <code>).
+- name: Config | read health mutes
+  ansible.builtin.command: ceph health -f json
+  register: ceph_config_health
+  changed_when: false
+  check_mode: false
+
+- name: Config | mute the accepted health checks
+  ansible.builtin.command: ceph health mute {{ item.code }} --sticky
+  loop: "{{ ceph_health_mutes }}"
+  loop_control:
+    label: "{{ item.code }}: {{ item.why }}"
+  when: >-
+    item.code not in ((ceph_config_health.stdout | from_json).mutes | default([])
+                      | map(attribute='code') | list)
+  changed_when: true
+
 - name: Config | remove host-level overrides of managed options
   ansible.builtin.command: ceph config rm {{ item.section }}/{{ item.mask }} {{ item.name }}
   loop: >-

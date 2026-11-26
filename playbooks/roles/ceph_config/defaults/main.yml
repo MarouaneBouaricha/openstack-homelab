@@ -3,3 +3,6 @@
 # Set in inventory/group_vars/ceph_nodes.yml. Each item: who (osd, mon, global,
 # osd/host:ceph03, ...), name, value as `ceph config dump` stores it (sizes in bytes).
 ceph_config: []
+
+# Health checks muted on purpose ({code, why}), `ceph health mute <code> --sticky`
+ceph_health_mutes: []

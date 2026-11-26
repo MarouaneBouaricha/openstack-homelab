@@ -55,6 +55,19 @@ ceph_rgw_vip_prefix: 24
 ceph_rgw_frontend_port: 80
 ceph_rgw_monitor_port: 1967                    # haproxy status page
 
+# Health checks muted on purpose (ceph-cluster.yml --tags config, sticky).
+# Squid 19.2.6+ (CVE-2025-30156) flags CephX keys of type "aes". cephadm moved
+# the daemon keys to aes256k; client keys stay "aes" (auth_preferred_cipher
+# aes, aes still allowed) until OpenStack's librbd is known to support
+# aes256k: rotating client.glance / client.cinder or disallowing aes could lock
+# OpenStack out. Remove these once the client keys are rotated
+# (ceph/OPERATIONS.md, Upgrades). AUTH_INSECURE_ROTATING_SERVICE_KEY_TYPE
+# clears by itself within ~1 h of the upgrade.
+ceph_health_mutes:
+  - { code: AUTH_INSECURE_CLIENT_KEY_TYPE, why: "client keys still aes, OpenStack librbd not confirmed for aes256k" }
+  - { code: AUTH_INSECURE_KEYS_ALLOWED, why: "aes kept allowed for those client keys" }
+  - { code: AUTH_INSECURE_KEYS_CREATABLE, why: "follows from aes allowed" }
+
 # RBD pools for OpenStack: 3 copies (one per host), I/O continues with 2
 ceph_pools:
   - { name: images, pg_num: 32, size: 3, min_size: 2, application: rbd }    # Glance

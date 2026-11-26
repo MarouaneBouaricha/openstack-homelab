@@ -130,6 +130,7 @@ sets the `ceph_config` options (OSD memory), deploys the standalone S3 gateway
 
 | `ceph-prereqs.yml` tag | What it does |
 |-----------|--------------|
+| `rootfs`  | Grows the root LV into the free space of its volume group (container images fill `/`; the MON warns below 30% free) |
 | `upgrade` | `apt update` + `apt upgrade` |
 | `docker`  | `docker.io` (cephadm's container runtime), enabled and started |
 | `cephadm` | download.ceph.com repo for `ceph_release` (the release the cluster runs, in `inventory/group_vars/ceph_nodes.yml`) + `cephadm` and `ceph-common` |

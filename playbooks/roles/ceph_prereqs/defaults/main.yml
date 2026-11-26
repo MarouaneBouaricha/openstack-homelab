@@ -10,6 +10,10 @@ ceph_packages_state: present
 ceph_key_url: https://download.ceph.com/keys/release.asc
 ceph_keyring: /etc/apt/keyrings/ceph.asc
 
+# Root LV grown into all free space of its volume group (rootfs tag)
+ceph_extend_root_lv: true
+ceph_root_lv: /dev/ubuntu-vg/ubuntu-lv
+
 # Base tools. systemd-timesyncd is deliberately NOT here: it conflicts with
 # chrony (Conflicts: time-daemon) and installing it would remove chrony.
 ceph_base_packages:

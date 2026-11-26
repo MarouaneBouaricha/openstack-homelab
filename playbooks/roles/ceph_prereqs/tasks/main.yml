@@ -6,6 +6,11 @@
     upgrade: "yes"
   tags: [upgrade]
 
+# --- root filesystem: grow into the free space of its volume group --------------
+- name: Root filesystem
+  ansible.builtin.import_tasks: root_fs.yml
+  tags: [rootfs]
+
 # --- base tools -----------------------------------------------------------------
 - name: Install base packages
   ansible.builtin.apt:

@@ -2,6 +2,8 @@
 # =============================================================================
 # Ceph node prerequisites (run after preconfig.yml, before cephadm bootstrap)
 #
+#   rootfs   grows the root LV into the free space of its volume group (the
+#            Ubuntu installer leaves half unused; images fill /, MON_DISK_LOW)
 #   upgrade  apt update + upgrade
 #   docker   docker.io, enabled and started
 #   cephadm  download.ceph.com repo of ceph_release (the release the cluster
