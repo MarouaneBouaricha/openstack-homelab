@@ -2,8 +2,15 @@
 - name: Preflight
   ansible.builtin.import_tasks: preflight.yml
 
+# Backup, autoscaler pause, check + start: only when there is something to do
 - name: Upgrade
   ansible.builtin.include_tasks: upgrade.yml
   when:
     - not ceph_upgrade_done | bool
     - not ansible_check_mode
+
+# Wait, verify, restore: always, so a re-run after a playbook failure (while
+# cephadm went on alone) still resumes the autoscaler and re-applies the mutes
+- name: Finish
+  ansible.builtin.include_tasks: finish.yml
+  when: not ansible_check_mode

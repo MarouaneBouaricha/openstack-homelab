@@ -68,7 +68,7 @@ the password.
 
 | `ceph-upgrade.yml` tag | What it does |
 |------------------------|--------------|
-| `upgrade` | On ceph01, `-e ceph_upgrade_to=<release>`. Preflight (read-only, all of `--check`): target is the next release (no skipping, no downgrade), HEALTH_OK, a standby MGR, no other upgrade running, connected client releases. Then saves the cluster state to `/root/ceph-backups/`, pauses the PG autoscaler, `ceph orch upgrade check` + `start`, waits for cephadm, checks every daemon and `require_osd_release`, resumes the autoscaler, waits for HEALTH_OK. Re-running resumes an upgrade in progress or skips a finished one |
+| `upgrade` | On ceph01, `-e ceph_upgrade_to=<release>`. Preflight (read-only, all of `--check`): target is the next release (no skipping, no downgrade), HEALTH_OK, a standby MGR, no other upgrade running, connected client releases. Then saves the cluster state to `/root/ceph-backups/`, pauses the PG autoscaler, `ceph orch upgrade check` + `start`, waits for cephadm, checks every daemon and `require_osd_release`, resumes the autoscaler, re-applies `ceph_config` and `ceph_health_mutes` (cephadm unmutes the AUTH checks when it completes), waits for HEALTH_OK. Re-running resumes an upgrade in progress; on an upgraded cluster it only runs the checks and restores |
 | `packages` | download.ceph.com repo of the new release + latest `cephadm` and `ceph-common` on every Ceph node, after the daemons; then removes the images no container uses (the old release, ~2 GB per node) |
 
 Every playbook previews with `--check --diff`, never deletes a pool, a user or

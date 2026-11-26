@@ -11,7 +11,10 @@
 #              autoscaler, `ceph orch upgrade check` + `start`, waits for
 #              cephadm (mgr -> mon -> crash -> osd -> rgw), checks every
 #              daemon runs the target and require_osd_release, resumes the
-#              autoscaler, waits for HEALTH_OK. Re-running resumes or skips.
+#              autoscaler, re-applies ceph_config + ceph_health_mutes (cephadm
+#              unmutes the AUTH_* checks when it completes), waits for
+#              HEALTH_OK. Re-running resumes an upgrade in progress, or only
+#              runs the checks and restores on an upgraded cluster.
 #   packages   download.ceph.com repo of the new release + latest cephadm and
 #              ceph-common on every Ceph node (after the daemons), then removes
 #              the images no container uses (the old release, ~2 GB per node)
