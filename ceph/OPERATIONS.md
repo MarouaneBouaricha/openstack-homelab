@@ -204,16 +204,10 @@ instance from a Glance image, attach a Cinder volume). Repeat with
   VIP.
 - **CephX key types (squid 19.2.6+, CVE-2025-30156):** after the upgrade the
   cluster raises `AUTH_INSECURE_*` warnings for keys of type `aes`. cephadm
-  moves the daemon keys to `aes256k` itself; `AUTH_INSECURE_ROTATING_SERVICE_KEY_TYPE`
-  clears within ~1 h. The client keys (admin, bootstrap, crash, exporter,
-  RGW, and OpenStack's `client.glance` / `client.cinder`) stay `aes`, with
-  `aes` still allowed and the three remaining warnings muted
-  (`ceph_health_mutes`, `ceph-cluster.yml --tags config`). Rotating them is a
-  separate step, once OpenStack's librbd is known to support `aes256k`:
-  `ceph auth rotate --key-type=aes256k client.<id>`, then the new keyring
-  wherever the key is used (`ceph-pools.yml --tags clients` + Kolla reconfigure
-  for glance/cinder/nova, including nova's libvirt secret). Only then
-  `ceph mon set auth_allowed_ciphers aes256k` and remove the mutes.
+  moves the daemon (mon, mgr, osd) keys to `aes256k` itself;
+  `AUTH_INSECURE_ROTATING_SERVICE_KEY_TYPE` clears within ~1 h. Client keys:
+  [CephX key types](#cephx-key-types).
+
 - **Tentacle specifics (seen 2026-11-26):** after the last OSD, cephadm
   rotates each OSD's key to `aes256k` and redeploys it one by one (the
   progress counter goes down for a while; normal). When it completes it
@@ -236,6 +230,54 @@ instance from a Glance image, attach a Cinder volume). Repeat with
 - **Operating system:** standard support for Ubuntu 22.04 ends in 2027. Move
   the Ceph nodes to 24.04 one at a time in maintenance mode. Check first that
   download.ceph.com publishes noble builds of your Ceph release.
+
+
+## CephX key types
+
+State since 2026-11-26: every key is `aes256k` except OpenStack's
+`client.glance` and `client.cinder`. The Kolla 2026.1 images ship librados
+**20.2.0** (Ubuntu Cloud Archive), which cannot authenticate with an `aes256k`
+key (a throwaway `aes256k` user failed from `glance_api`, an `aes` one
+connected); support came with 20.2.4. So `auth_allowed_ciphers` stays
+`aes, aes256k`, `auth_preferred_cipher` stays `aes` (keys created by
+`ceph-pools.yml` work for OpenStack), and three warnings are muted with that
+reason (`ceph_health_mutes`).
+
+Check what a client library can do before rotating its key (on ceph01, then
+from the client):
+
+```bash
+ceph auth get-or-create client.keytest mon 'profile rbd' osd 'profile rbd-read-only pool=images' --key_type aes256k
+# copy that keyring into e.g. the glance_api container, connect with python3-rados
+# (rados.Rados(name=..., conf={'keyring': ...}).connect()), then:
+ceph auth del client.keytest
+```
+
+How the Ceph-internal keys were rotated (backup first:
+`ceph auth export > /root/ceph-backups/auth-before-rotation-<ts>.txt`):
+
+- `client.admin`: create a spare `client.admin-backup` (`mon/osd/mgr/mds 'allow *'`,
+  `--key_type aes256k`), then with it
+  `ceph -n client.admin-backup -k <spare> auth rotate client.admin --key_type aes256k > /etc/ceph/ceph.client.admin.keyring`.
+  cephadm copies the new keyring to the other `_admin` host. Delete the spare.
+- `client.bootstrap-*`: `ceph auth rotate client.bootstrap-<x> --key_type aes256k`.
+- cephadm daemons (crash, ceph-exporter, rgw), one at a time:
+  `ceph auth rotate client.<daemon> --key_type aes256k`, then
+  `ceph orch daemon redeploy <daemon>` (writes the new keyring). For RGW
+  check the VIP answers between the two gateways.
+
+Still to do, once Kolla images bring librados >= 20.2.4 (check:
+`ssh compute01 sudo docker exec nova_compute dpkg -l librados2`):
+
+1. `ceph auth rotate client.glance --key_type aes256k` and the same for
+   `client.cinder`.
+2. `ceph-pools.yml --tags clients` (new keyrings under `/etc/kolla/config`),
+   then `kolla-ansible reconfigure -t glance,cinder,nova` (nova's libvirt
+   secret holds the cinder key).
+3. Test: image upload, volume create/attach, instance boot.
+4. `ceph mon set auth_preferred_cipher aes256k`,
+   `ceph mon set auth_allowed_ciphers aes256k`, remove `ceph_health_mutes`
+   and `ceph health unmute` the three checks.
 
 ## Keep the OpenStack clients in step
 
