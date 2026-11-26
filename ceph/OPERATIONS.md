@@ -6,7 +6,7 @@ adding and removing disks and nodes, upgrades, backups. The build itself is in
 
 Lab assumptions: 3 nodes (`ceph01`-`ceph03`) with 2 OSDs each, 3 MONs, 2 MGRs,
 pools `images` / `volumes` / `vms` at `size 3` / `min_size 2` with failure
-domain = host, release squid (upgrades below). `ceph` commands run as root on **ceph01** or **ceph02** (both
+domain = host, release tentacle (upgrades below). `ceph` commands run as root on **ceph01** or **ceph02** (both
 carry the `_admin` label, so cephadm keeps `/etc/ceph/ceph.conf` and the admin
 keyring on them), or in `cephadm shell`.
 
@@ -214,6 +214,15 @@ instance from a Glance image, attach a Cinder volume). Repeat with
   wherever the key is used (`ceph-pools.yml --tags clients` + Kolla reconfigure
   for glance/cinder/nova, including nova's libvirt secret). Only then
   `ceph mon set auth_allowed_ciphers aes256k` and remove the mutes.
+- **Tentacle specifics (seen 2026-11-26):** after the last OSD, cephadm
+  rotates each OSD's key to `aes256k` and redeploys it one by one (the
+  progress counter goes down for a while; normal). When it completes it
+  unmutes every AUTH check; the playbook re-applies `ceph_health_mutes`.
+- **Slow internet:** cephadm pulls the ~2 GB image on each host during the
+  upgrade and `upgrade check` gives up after 15 min. Pre-pull it first on
+  every Ceph node (`sudo docker pull quay.io/ceph/ceph:v<version>`, it resumes
+  where it stopped), then run the playbook. The monitoring images (prometheus,
+  grafana, ...) are pulled during the run.
 - **If it stops:** `ceph orch upgrade status` and `ceph health detail`
   (`UPGRADE_*` alerts) say why. Fix it, then re-run the playbook: it resumes.
   `ceph orch upgrade stop` abandons it; the daemons already upgraded stay

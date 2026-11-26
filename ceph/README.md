@@ -11,11 +11,11 @@ commands, for reference only.
 | ceph02 | 10.0.2.60      | `_admin` `mon` `mgr` `rgw` | mon · mgr · osd · rgw · haproxy · keepalived | `/dev/sdb`, `/dev/sdc` (100 GB each) |
 | ceph03 | 10.0.2.70      | `mon` `rgw`       | mon · osd · rgw · haproxy · keepalived | `/dev/sdb`, `/dev/sdc` (100 GB each) |
 
-- **Release:** squid (19.2.7, upgraded from reef 18.2.8 on 2026-11-26), from
+- **Release:** tentacle (20.2.5, upgraded on 2026-11-26 from reef 18.2.8 via
+  squid 19.2.7 with [ceph-upgrade.yml](../playbooks/ceph-upgrade.yml)), from
   download.ceph.com (`ceph_release` in `inventory/group_vars/ceph_nodes.yml`).
-  Next: tentacle 20.2.5 with [ceph-upgrade.yml](../playbooks/ceph-upgrade.yml)
-  ([OPERATIONS.md](OPERATIONS.md#upgrades)); squid reaches end of life on
-  2026-12-02.
+  Supported until about 2027-06; next is umbrella 21.2 once it has a few
+  point releases ([OPERATIONS.md](OPERATIONS.md#upgrades)).
 - **Networks:** public and cluster traffic both on the storage network
   `10.0.2.0/24` (bootstrap with `--mon-ip 10.0.2.50 --cluster-network 10.0.2.0/24`).
 - **Dashboard:** `https://ceph01:8443`, user `admin`, password set at
