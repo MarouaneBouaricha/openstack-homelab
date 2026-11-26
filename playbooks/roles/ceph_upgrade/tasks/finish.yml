@@ -4,7 +4,8 @@
 # health mutes). Safe to run on a cluster that is already upgraded.
 
 # Matched as text, not parsed: during MGR failovers the command can return
-# rc 0 with an empty answer, which is simply retried.
+# rc 0 with an empty answer (retried), and when nothing runs Tentacle prints
+# "There are no upgrades in progress currently." instead of JSON.
 - name: Finish | wait for cephadm (follow it with `ceph -W cephadm` on ceph01)
   ansible.builtin.command: ceph orch upgrade status -f json
   register: ceph_upgrade_progress
@@ -14,13 +15,13 @@
   delay: "{{ ceph_upgrade_wait_delay }}"
   until: >-
     ceph_upgrade_progress.rc == 0
-    and (ceph_upgrade_progress.stdout is search('"in_progress": ?false')
+    and (ceph_upgrade_progress.stdout is search('"in_progress": ?false|no upgrades? in progress')
          or ceph_upgrade_progress.stdout is search('"is_paused": ?true'))
 
 - name: Finish | cephadm finished without pausing
   ansible.builtin.assert:
     that:
-      - ceph_upgrade_progress.stdout is search('"in_progress": ?false')
+      - ceph_upgrade_progress.stdout is search('"in_progress": ?false|no upgrades? in progress')
     fail_msg: >-
       cephadm paused or stopped the upgrade: {{ ceph_upgrade_progress.stdout | default('') }}.
       See `ceph health detail` (UPGRADE_* alerts) and `ceph log last 50 info cephadm`, fix,

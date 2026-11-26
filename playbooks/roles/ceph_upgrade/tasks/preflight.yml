@@ -30,7 +30,10 @@
     ceph_upgrade_target_major: "{{ (ceph_upgrade_versions[ceph_upgrade_to] | string).split('.') | first | int }}"
     ceph_upgrade_running: "{{ _r[0].stdout | regex_findall('ceph version ([0-9.]+)') | unique | sort }}"
     ceph_upgrade_health: "{{ (_r[1].stdout | from_json).status }}"
-    ceph_upgrade_status: "{{ _r[2].stdout | from_json }}"
+    # Tentacle answers in plain text, even with -f json, when nothing runs
+    ceph_upgrade_status: >-
+      {{ (_r[2].stdout | from_json) if (_r[2].stdout | trim).startswith('{')
+         else {'in_progress': false, 'target_image': none} }}
     ceph_upgrade_standby_mgrs: "{{ (_r[3].stdout | from_json).standbys | length }}"
     ceph_upgrade_osd_release: "{{ (_r[4].stdout | from_json).require_osd_release }}"
     ceph_upgrade_min_compat: "{{ (_r[4].stdout | from_json).require_min_compat_client }}"
