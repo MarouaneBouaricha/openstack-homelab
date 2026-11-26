@@ -15,7 +15,7 @@ playbooks and the Kolla configuration.
 |-----------|---------|-------|
 | OpenStack | 2026.1 (Gazpacho) | Keystone, Glance, Nova, Neutron (Open vSwitch), Cinder, Horizon, behind HAProxy + keepalived |
 | Kolla-Ansible | 22.x | Upstream images from `quay.io/openstack.kolla`, Docker runtime |
-| Ceph | Squid 19.2 | cephadm, 3 MONs, 6 OSDs, 3 replicas; RBD pools `images`, `volumes`, `vms` |
+| Ceph | Reef 18.2 (`ceph_release`; upgrade with `ceph-upgrade.yml` to Squid 19.2, then Tentacle 20.2) | cephadm, 3 MONs, 6 OSDs, 3 replicas; RBD pools `images`, `volumes`, `vms` |
 | Ubuntu | 24.04 (OpenStack nodes), 22.04 (deploy VM, Ceph nodes) | |
 | Ansible | ansible-core 2.20 (Kolla), 2.16+ (this repo's playbooks) | |
 
@@ -132,7 +132,7 @@ sets the `ceph_config` options (OSD memory), deploys the standalone S3 gateway
 |-----------|--------------|
 | `upgrade` | `apt update` + `apt upgrade` |
 | `docker`  | `docker.io` (cephadm's container runtime), enabled and started |
-| `cephadm` | download.ceph.com repo for `ceph_release` (default `squid`; `-e ceph_release=tentacle` or `reef`) + `cephadm` and `ceph-common` |
+| `cephadm` | download.ceph.com repo for `ceph_release` (the release the cluster runs, in `inventory/group_vars/ceph_nodes.yml`) + `cephadm` and `ceph-common` |
 | `reboot`  | Reboots only nodes with `/var/run/reboot-required`, one at a time |
 
 ### 4. Deploy OpenStack

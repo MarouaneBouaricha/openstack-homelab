@@ -1,0 +1,17 @@
+---
+# Release to move to (-e ceph_upgrade_to=squid|tentacle). Its version comes
+# from ceph_upgrade_versions in inventory/group_vars/ceph_nodes.yml.
+ceph_upgrade_to: ""
+ceph_upgrade_versions: {}
+
+# Start only from HEALTH_OK (true: also from HEALTH_WARN)
+ceph_upgrade_allow_warn: false
+
+# cephadm upgrade wait: 360 x 20 s = 2 h; cluster back to HEALTH_OK: 60 x 10 s
+ceph_upgrade_wait_retries: 360
+ceph_upgrade_wait_delay: 20
+ceph_upgrade_health_retries: 60
+ceph_upgrade_health_delay: 10
+
+# State saved before the upgrade starts (on the admin node)
+ceph_upgrade_backup_dir: /root/ceph-backups

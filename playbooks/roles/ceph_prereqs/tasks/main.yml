@@ -26,43 +26,7 @@
     enabled: true
   tags: [docker]
 
-# --- Ceph repository (signed-by keyring; apt-key is deprecated) -----------------
-- name: Create apt keyring directory
-  ansible.builtin.file:
-    path: "{{ ceph_keyring | dirname }}"
-    state: directory
-    mode: "0755"
-  tags: [cephadm]
-
-- name: Download Ceph release key
-  ansible.builtin.get_url:
-    url: "{{ ceph_key_url }}"
-    dest: "{{ ceph_keyring }}"
-    mode: "0644"
-  tags: [cephadm]
-
-- name: Add Ceph {{ ceph_release }} repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by={{ ceph_keyring }}] {{ ceph_repo_url }} {{ ansible_distribution_release }} main"
-    filename: ceph
-    state: present
-    update_cache: true
-  tags: [cephadm]
-
-# --- cephadm + ceph CLI -------------------------------------------------------
-- name: Install cephadm and ceph-common
-  ansible.builtin.apt:
-    name: "{{ ceph_packages }}"
-    state: present
-  tags: [cephadm]
-
-- name: Read cephadm version
-  ansible.builtin.command: cephadm version
-  register: ceph_prereqs_version
-  changed_when: false
-  tags: [cephadm]
-
-- name: Installed versions
-  ansible.builtin.debug:
-    msg: "{{ ceph_prereqs_version.stdout_lines | last }}"
+# --- Ceph repository (signed-by keyring; apt-key is deprecated) + cephadm, CLI --
+- name: Ceph repository and packages
+  ansible.builtin.import_tasks: repo.yml
   tags: [cephadm]

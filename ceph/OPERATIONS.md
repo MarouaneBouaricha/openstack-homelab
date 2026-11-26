@@ -6,7 +6,7 @@ adding and removing disks and nodes, upgrades, backups. The build itself is in
 
 Lab assumptions: 3 nodes (`ceph01`-`ceph03`) with 2 OSDs each, 3 MONs, 2 MGRs,
 pools `images` / `volumes` / `vms` at `size 3` / `min_size 2` with failure
-domain = host, release squid. `ceph` commands run as root on **ceph01** or **ceph02** (both
+domain = host, release reef (upgrades below). `ceph` commands run as root on **ceph01** or **ceph02** (both
 carry the `_admin` label, so cephadm keeps `/etc/ceph/ceph.conf` and the admin
 keyring on them), or in `cephadm shell`.
 
@@ -164,22 +164,54 @@ same host**: there is no other host to take it. To stay under the 85%
 
 ## Upgrades
 
-- **Within squid:**
-  ```bash
-  ceph orch upgrade check --ceph-version 19.2.x
-  ceph orch upgrade start --ceph-version 19.2.x
-  ceph orch upgrade status        # ceph -W cephadm to follow it
-  ```
-- **squid → tentacle:**
-  1. Read the release notes.
-  2. Update the host CLI (`cephadm`, `ceph-common`):
-     `ansible-playbook playbooks/ceph-prereqs.yml -K -e ceph_release=tentacle --tags cephadm`,
-     and change `ceph_release` in the role defaults.
-  3. Run `ceph orch upgrade start --ceph-version 20.2.x`.
-  4. Check that `ceph osd dump | grep require_osd_release` shows the new release.
+[ceph-upgrade.yml](../playbooks/ceph-upgrade.yml) moves the cluster one
+release per run: **reef 18.2.8 → squid 19.2.7 → tentacle 20.2.5** (versions in
+`ceph_upgrade_versions`, `inventory/group_vars/ceph_nodes.yml`). Ceph tests
+upgrades from the last two stable releases only, so reef never jumps straight
+to tentacle; the playbook refuses skips and downgrades.
 
-  The Kolla containers bring their own Ceph client libraries, so OpenStack
-  keeps working as long as the release gap stays small.
+**There is no way back**: Ceph cannot downgrade, and the upgrade raises
+`require_osd_release`. Before each run:
+
+1. Read the target's release notes, in particular the *critical upgrade steps*
+   of squid 19.2.6+ and tentacle 20.2.4+ (CVE fixes).
+2. Power off the 3 Ceph VMs (OpenStack VMs first, or stop their I/O) and take a
+   VMware snapshot of each: the only rollback. Power them back on.
+3. `ansible-playbook playbooks/health.yml --tags ceph` must pass.
+4. Note the OpenStack Ceph client, with OpenStack up:
+   `ssh compute01 sudo docker exec nova_compute dpkg -l librbd1`.
+
+Then, per release:
+
+```bash
+ansible-playbook playbooks/ceph-upgrade.yml -e ceph_upgrade_to=squid --check   # preflight only
+ansible-playbook playbooks/ceph-upgrade.yml -e ceph_upgrade_to=squid           # 30-60 min
+# on ceph01, meanwhile: ceph -W cephadm   /   ceph orch upgrade status
+```
+
+Set `ceph_release: squid` in `inventory/group_vars/ceph_nodes.yml`, commit,
+push. Check `health.yml`, the S3 test through the VIP, and OpenStack (boot an
+instance from a Glance image, attach a Cinder volume). Repeat with
+`ceph_upgrade_to=tentacle`.
+
+- **OpenStack:** the Kolla containers bring their own Ceph client libraries.
+  A cluster keeps serving older clients, so nothing changes on the OpenStack
+  side, as long as `require_min_compat_client` stays `luminous` (the playbook
+  never raises it) and `rbd_default_features` is left alone.
+- **During the upgrade:** cephadm restarts mgr → mon → crash → osd → rgw one
+  at a time. With 3 replicas and `min_size 2`, I/O continues; each OSD restart
+  pauses it for a few seconds. RGW traffic moves to the other gateway via the
+  VIP.
+- **If it stops:** `ceph orch upgrade status` and `ceph health detail`
+  (`UPGRADE_*` alerts) say why. Fix it, then re-run the playbook: it resumes.
+  `ceph orch upgrade stop` abandons it; the daemons already upgraded stay
+  upgraded.
+- **Within a release** (e.g. 20.2.5 → 20.2.6): change the version in
+  `ceph_upgrade_versions` and re-run with the same `ceph_upgrade_to`.
+- **Not fixed by upgrading:** the dashboard's Object Gateway *Overview* page
+  slows down and freezes in the browser (it piles up requests on every
+  refresh; the code is the same in squid and tentacle). The Gateways, Users
+  and Buckets pages are fine.
 - **Operating system:** standard support for Ubuntu 22.04 ends in 2027. Move
   the Ceph nodes to 24.04 one at a time in maintenance mode. Check first that
   download.ceph.com publishes noble builds of your Ceph release.

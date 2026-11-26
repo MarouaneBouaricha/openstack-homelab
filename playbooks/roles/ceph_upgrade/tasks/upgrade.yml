@@ -1,0 +1,99 @@
+---
+# cephadm rolling upgrade to ceph_upgrade_target: backup, pause the PG
+# autoscaler, `ceph orch upgrade check|start`, wait, verify, resume.
+# Skipped when every daemon already runs the target.
+
+- name: Upgrade | backup directory
+  ansible.builtin.file:
+    path: "{{ ceph_upgrade_backup_dir }}"
+    state: directory
+    mode: "0700"
+  when: not ceph_upgrade_resume | bool
+
+- name: Upgrade | save the cluster state before upgrading
+  ansible.builtin.shell: >-
+    for c in "orch ls --export" "config dump" "versions" "osd dump" "mon dump"
+    "health detail" "orch ps"; do echo "### ceph $c"; ceph $c; done
+    > {{ ceph_upgrade_backup_dir }}/upgrade-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}-to-{{ ceph_upgrade_target }}.txt 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: not ceph_upgrade_resume | bool
+
+# Keeps pg_num still while OSDs restart. Always resumed at the end (this lab
+# never runs with the autoscaler paused), also after a failed and re-run upgrade.
+- name: Upgrade | pause the PG autoscaler
+  ansible.builtin.command: ceph osd pool set noautoscale
+  changed_when: true
+
+- name: Upgrade | check the target image (pulls it on the MGR host)
+  ansible.builtin.command: ceph orch upgrade check --ceph-version {{ ceph_upgrade_target }}
+  register: ceph_upgrade_check
+  changed_when: false
+  when: not ceph_upgrade_resume | bool
+
+- name: Upgrade | daemons to upgrade
+  ansible.builtin.debug:
+    msg: "{{ (ceph_upgrade_check.stdout | from_json).needs_update | default({}) | list }}"
+  when: not ceph_upgrade_resume | bool
+
+- name: Upgrade | start (mgr -> mon -> crash -> osd -> rgw ...)
+  ansible.builtin.command: ceph orch upgrade start --ceph-version {{ ceph_upgrade_target }}
+  changed_when: true
+  when: not ceph_upgrade_resume | bool
+
+- name: Upgrade | wait for cephadm to finish (follow it with `ceph -W cephadm` on ceph01)
+  ansible.builtin.command: ceph orch upgrade status -f json
+  register: ceph_upgrade_progress
+  changed_when: false
+  failed_when: false
+  retries: "{{ ceph_upgrade_wait_retries }}"
+  delay: "{{ ceph_upgrade_wait_delay }}"
+  until: >-
+    ceph_upgrade_progress.rc == 0
+    and (not (ceph_upgrade_progress.stdout | from_json).in_progress
+         or (ceph_upgrade_progress.stdout | from_json).is_paused)
+
+- name: Upgrade | cephadm finished without pausing
+  ansible.builtin.assert:
+    that:
+      - ceph_upgrade_progress.rc == 0
+      - not (ceph_upgrade_progress.stdout | from_json).is_paused
+    fail_msg: >-
+      cephadm paused or stopped the upgrade: {{ ceph_upgrade_progress.stdout | default('') }}.
+      See `ceph health detail` (UPGRADE_* alerts) and `ceph log last 50 info cephadm`, fix,
+      then `ceph orch upgrade resume` or re-run this playbook. The PG autoscaler stays paused.
+    quiet: true
+
+- name: Upgrade | every daemon on the target
+  ansible.builtin.command: ceph versions -f json
+  register: ceph_upgrade_versions_after
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: >-
+    ceph_upgrade_versions_after.stdout | regex_findall('ceph version ([0-9.]+)') | unique
+    == [ceph_upgrade_target]
+
+# cephadm normally sets it once the last OSD is upgraded. Cannot be undone.
+- name: Upgrade | read require_osd_release
+  ansible.builtin.command: ceph osd dump -f json
+  register: ceph_upgrade_osd_dump
+  changed_when: false
+
+- name: Upgrade | require_osd_release {{ ceph_upgrade_to }}
+  ansible.builtin.command: ceph osd require-osd-release {{ ceph_upgrade_to }}
+  changed_when: true
+  when: (ceph_upgrade_osd_dump.stdout | from_json).require_osd_release != ceph_upgrade_to
+
+- name: Upgrade | resume the PG autoscaler
+  ansible.builtin.command: ceph osd pool unset noautoscale
+  changed_when: true
+
+- name: Upgrade | wait for HEALTH_OK
+  ansible.builtin.command: ceph health -f json
+  register: ceph_upgrade_health_after
+  changed_when: false
+  retries: "{{ ceph_upgrade_health_retries }}"
+  delay: "{{ ceph_upgrade_health_delay }}"
+  until: (ceph_upgrade_health_after.stdout | from_json).status == 'HEALTH_OK'

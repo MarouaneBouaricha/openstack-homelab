@@ -11,8 +11,10 @@ commands, for reference only.
 | ceph02 | 10.0.2.60      | `_admin` `mon` `mgr` `rgw` | mon · mgr · osd · rgw · haproxy · keepalived | `/dev/sdb`, `/dev/sdc` (100 GB each) |
 | ceph03 | 10.0.2.70      | `mon` `rgw`       | mon · osd · rgw · haproxy · keepalived | `/dev/sdb`, `/dev/sdc` (100 GB each) |
 
-- **Release:** squid (19.2), from download.ceph.com (`ceph_release` in
-  [ceph-prereqs](../playbooks/roles/ceph_prereqs/defaults/main.yml)).
+- **Release:** reef (18.2.8), from download.ceph.com (`ceph_release` in
+  `inventory/group_vars/ceph_nodes.yml`). Upgrade path with
+  [ceph-upgrade.yml](../playbooks/ceph-upgrade.yml): squid 19.2.7, then
+  tentacle 20.2.5 ([OPERATIONS.md](OPERATIONS.md#upgrades)).
 - **Networks:** public and cluster traffic both on the storage network
   `10.0.2.0/24` (bootstrap with `--mon-ip 10.0.2.50 --cluster-network 10.0.2.0/24`).
 - **Dashboard:** `https://ceph01:8443`, user `admin`, password set at
@@ -44,7 +46,7 @@ the password.
 |-----------|--------------|
 | `upgrade` | `apt update` + `apt upgrade` |
 | `docker`  | `docker.io` (cephadm's container runtime), enabled and started |
-| `cephadm` | download.ceph.com repo for `ceph_release` (default `squid`; `-e ceph_release=tentacle` or `reef`) + `cephadm` and `ceph-common` |
+| `cephadm` | download.ceph.com repo for `ceph_release` (the release the cluster runs, in `inventory/group_vars/ceph_nodes.yml`) + `cephadm` and `ceph-common` |
 | `reboot`  | Reboots only nodes with `/var/run/reboot-required`, one at a time |
 
 | `ceph-cluster.yml` tag | Runbook step | What it does |
@@ -61,6 +63,11 @@ the password.
 | `pools` | Creates missing pools from `ceph_pools` (`images`, `volumes`, `vms`), sets size / min_size / application when they differ, `rbd pool init` on new pools only |
 | `users` | Creates missing users from `ceph_clients` (`client.glance`, `client.cinder`), updates caps that differ |
 | `clients` | Writes the users' keyrings to `/etc/kolla/config/` on the deploy VM (mode 0600; skipped while `/etc/kolla` does not exist). Fails if the repo's `kolla/config/ceph.conf` does not match the cluster, printing the lines to commit |
+
+| `ceph-upgrade.yml` tag | What it does |
+|------------------------|--------------|
+| `upgrade` | On ceph01, `-e ceph_upgrade_to=<release>`. Preflight (read-only, all of `--check`): target is the next release (no skipping, no downgrade), HEALTH_OK, a standby MGR, no other upgrade running, connected client releases. Then saves the cluster state to `/root/ceph-backups/`, pauses the PG autoscaler, `ceph orch upgrade check` + `start`, waits for cephadm, checks every daemon and `require_osd_release`, resumes the autoscaler, waits for HEALTH_OK. Re-running resumes an upgrade in progress or skips a finished one |
+| `packages` | download.ceph.com repo of the new release + latest `cephadm` and `ceph-common` on every Ceph node, after the daemons |
 
 Every playbook previews with `--check --diff`, never deletes a pool, a user or
 a host, and needs no `-K` except `ceph-prereqs.yml`.

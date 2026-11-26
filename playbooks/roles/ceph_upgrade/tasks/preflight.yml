@@ -1,0 +1,98 @@
+---
+# Read-only: where the cluster is, where it may go, and whether it is fit to
+# go there. Runs in check mode too (ceph-upgrade.yml --check = preflight only).
+
+- name: Preflight | target release
+  ansible.builtin.assert:
+    that:
+      - ceph_upgrade_to in ceph_upgrade_versions
+    fail_msg: >-
+      Pass -e ceph_upgrade_to=<release>, one of {{ ceph_upgrade_versions | list | join(', ') }}
+      (ceph_upgrade_versions in inventory/group_vars/ceph_nodes.yml).
+    quiet: true
+
+- name: Preflight | read versions, health, upgrade status, MGRs, OSD map, clients
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - ceph versions -f json
+    - ceph health -f json
+    - ceph orch upgrade status -f json
+    - ceph mgr dump -f json
+    - ceph osd dump -f json
+    - ceph features -f json
+  register: ceph_upgrade_facts
+  changed_when: false
+  check_mode: false
+
+- name: Preflight | derive state
+  ansible.builtin.set_fact:
+    ceph_upgrade_target: "{{ ceph_upgrade_versions[ceph_upgrade_to] | string }}"
+    ceph_upgrade_target_major: "{{ (ceph_upgrade_versions[ceph_upgrade_to] | string).split('.') | first | int }}"
+    ceph_upgrade_running: "{{ _r[0].stdout | regex_findall('ceph version ([0-9.]+)') | unique | sort }}"
+    ceph_upgrade_health: "{{ (_r[1].stdout | from_json).status }}"
+    ceph_upgrade_status: "{{ _r[2].stdout | from_json }}"
+    ceph_upgrade_standby_mgrs: "{{ (_r[3].stdout | from_json).standbys | length }}"
+    ceph_upgrade_osd_release: "{{ (_r[4].stdout | from_json).require_osd_release }}"
+    ceph_upgrade_min_compat: "{{ (_r[4].stdout | from_json).require_min_compat_client }}"
+    ceph_upgrade_client_releases: >-
+      {{ (_r[5].stdout | from_json).client | default([]) | map(attribute='release') | unique | list }}
+  vars:
+    _r: "{{ ceph_upgrade_facts.results }}"
+
+- name: Preflight | derive majors
+  ansible.builtin.set_fact:
+    ceph_upgrade_running_majors: "{{ ceph_upgrade_running | map('split', '.') | map('first') | map('int') | unique | list }}"
+    ceph_upgrade_done: "{{ ceph_upgrade_running == [ceph_upgrade_target] }}"
+    # cephadm may store the target as a digest (ceph@sha256:...): any upgrade
+    # in progress is resumed; one visibly to another version is refused below
+    ceph_upgrade_resume: "{{ ceph_upgrade_status.in_progress | bool }}"
+    ceph_upgrade_other: >-
+      {{ ceph_upgrade_status.in_progress | bool
+         and (ceph_upgrade_status.target_image | default('', true)) is search(':v[0-9]')
+         and (ceph_upgrade_status.target_image | default('', true)) is not search(':v' ~ ceph_upgrade_target ~ '$') }}
+
+- name: Preflight | current state
+  ansible.builtin.debug:
+    msg:
+      - "running: {{ ceph_upgrade_running | join(', ') }} (require_osd_release {{ ceph_upgrade_osd_release }})"
+      - "target:  {{ ceph_upgrade_target }} ({{ ceph_upgrade_to }})"
+      - "health:  {{ ceph_upgrade_health }}, standby MGRs: {{ ceph_upgrade_standby_mgrs }}"
+      - >-
+        clients: {{ ceph_upgrade_client_releases | join(', ') }}; require_min_compat_client
+        {{ ceph_upgrade_min_compat }} (left as is: raising it can lock out the OpenStack clients)
+      - >-
+        {{ 'already done: nothing to upgrade' if ceph_upgrade_done
+           else ('resuming the upgrade in progress' if ceph_upgrade_resume else 'upgrade will start') }}
+
+- name: Preflight | one release at a time, never down
+  ansible.builtin.assert:
+    that:
+      - ceph_upgrade_target_major | int - ceph_upgrade_running_majors | min >= 0
+      - ceph_upgrade_target_major | int - ceph_upgrade_running_majors | min <= 1
+    fail_msg: >-
+      The cluster runs {{ ceph_upgrade_running | join(', ') }}: {{ ceph_upgrade_to }}
+      ({{ ceph_upgrade_target }}) is not the next release. Ceph tests upgrades from the
+      last two stable releases only, and never downgrades: go one release at a time
+      (reef -> squid -> tentacle).
+    quiet: true
+
+- name: Preflight | no other upgrade in progress
+  ansible.builtin.assert:
+    that: not ceph_upgrade_other | bool
+    fail_msg: >-
+      cephadm is already upgrading to {{ ceph_upgrade_status.target_image }}: let it
+      finish (ceph orch upgrade status) or stop it (ceph orch upgrade stop).
+    quiet: true
+
+- name: Preflight | cluster fit to start
+  ansible.builtin.assert:
+    that:
+      - ceph_upgrade_health == 'HEALTH_OK'
+        or (ceph_upgrade_allow_warn | bool and ceph_upgrade_health == 'HEALTH_WARN')
+      - ceph_upgrade_standby_mgrs | int >= 1
+    fail_msg: >-
+      Health is {{ ceph_upgrade_health }} (ceph health detail) and there are
+      {{ ceph_upgrade_standby_mgrs }} standby MGRs (cephadm needs one to fail over to).
+      Fix that first, or -e ceph_upgrade_allow_warn=true for a known warning.
+    quiet: true
+  when: not ceph_upgrade_done | bool and not ceph_upgrade_resume | bool

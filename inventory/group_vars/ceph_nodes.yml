@@ -7,6 +7,16 @@ provider_interface: null
 # Per-host cephadm labels are `ceph_labels` in inventory/hosts.yml.
 # =============================================================================
 
+# Release the cluster runs: download.ceph.com repo + cephadm / ceph-common on
+# the nodes (ceph-prereqs.yml). ceph-upgrade.yml moves the cluster one release
+# up and then asks to change this line (reef 18.2 -> squid 19.2 -> tentacle 20.2).
+ceph_release: reef
+
+# Target version of each release for ceph-upgrade.yml (-e ceph_upgrade_to=...)
+ceph_upgrade_versions:
+  squid: 19.2.7
+  tentacle: 20.2.5
+
 # Node that runs `ceph` commands (bootstrapped first, holds the admin keyring).
 # Plays default to ceph01 in `hosts:`: keep them in step if this changes.
 ceph_admin_host: ceph01

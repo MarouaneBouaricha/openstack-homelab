@@ -1,8 +1,12 @@
 ---
 # Ceph release from download.ceph.com (all built for Ubuntu 22.04 "jammy"):
 #   reef = 18.2, squid = 19.2, tentacle = 20.2
+# The release the cluster runs is set in inventory/group_vars/ceph_nodes.yml.
 ceph_release: squid
 ceph_repo_url: "https://download.ceph.com/debian-{{ ceph_release }}/"
+ceph_distribution_release: "{{ ansible_distribution_release }}"
+# present: install only; ceph-upgrade.yml uses latest
+ceph_packages_state: present
 ceph_key_url: https://download.ceph.com/keys/release.asc
 ceph_keyring: /etc/apt/keyrings/ceph.asc
 

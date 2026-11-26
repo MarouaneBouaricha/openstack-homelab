@@ -1,0 +1,42 @@
+---
+# download.ceph.com repo for ceph_release + cephadm and ceph-common.
+# Also used by ceph-upgrade.yml (ceph_packages_state: latest).
+# The repo file is written whole, so a new ceph_release replaces the old line.
+
+- name: Create apt keyring directory
+  ansible.builtin.file:
+    path: "{{ ceph_keyring | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Download Ceph release key
+  ansible.builtin.get_url:
+    url: "{{ ceph_key_url }}"
+    dest: "{{ ceph_keyring }}"
+    mode: "0644"
+
+- name: Ceph {{ ceph_release }} repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/ceph.list
+    content: "deb [signed-by={{ ceph_keyring }}] {{ ceph_repo_url }} {{ ceph_distribution_release }} main\n"
+    owner: root
+    group: root
+    mode: "0644"
+  register: ceph_prereqs_repo
+
+- name: Install cephadm and ceph-common ({{ ceph_packages_state }})
+  ansible.builtin.apt:
+    name: "{{ ceph_packages }}"
+    state: "{{ ceph_packages_state }}"
+    update_cache: "{{ ceph_prereqs_repo is changed or ceph_packages_state == 'latest' }}"
+
+- name: Read cephadm version
+  ansible.builtin.command: cephadm version
+  register: ceph_prereqs_version
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Installed versions
+  ansible.builtin.debug:
+    msg: "{{ ceph_prereqs_version.stdout_lines | default(['cephadm not installed yet']) | last }}"

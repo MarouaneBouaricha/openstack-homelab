@@ -1,0 +1,79 @@
+---
+# =============================================================================
+# Ceph upgrade, one release per run, with cephadm (rolling, the cluster stays
+# up): reef 18.2 -> squid 19.2 -> tentacle 20.2. Target versions are
+# ceph_upgrade_versions in inventory/group_vars/ceph_nodes.yml.
+#
+#   preflight  read-only: running versions, target is the next release (no
+#              skipping, no downgrade), HEALTH_OK, a standby MGR, no other
+#              upgrade in progress, connected client releases
+#   upgrade    saves the cluster state to /root/ceph-backups/, pauses the PG
+#              autoscaler, `ceph orch upgrade check` + `start`, waits for
+#              cephadm (mgr -> mon -> crash -> osd -> rgw), checks every
+#              daemon runs the target and require_osd_release, resumes the
+#              autoscaler, waits for HEALTH_OK. Re-running resumes or skips.
+#   packages   download.ceph.com repo of the new release + latest cephadm and
+#              ceph-common on every Ceph node (after the daemons)
+#   (always)   versions and the ceph_release line to commit
+#
+# Cannot be undone: Ceph has no downgrade. Take powered-off VM snapshots of
+# the 3 Ceph VMs first. require_min_compat_client is never changed, so the
+# OpenStack (Kolla) clients keep working.
+#
+# Run from the repo root on the deploy VM:
+#   ansible-playbook playbooks/health.yml --tags ceph
+#   ansible-playbook playbooks/ceph-upgrade.yml -e ceph_upgrade_to=squid --check   # preflight only
+#   ansible-playbook playbooks/ceph-upgrade.yml -e ceph_upgrade_to=squid
+#   (set ceph_release: squid in group_vars/ceph_nodes.yml, commit, push)
+#   ansible-playbook playbooks/ceph-upgrade.yml -e ceph_upgrade_to=tentacle
+# No -K: sudo is passwordless on the Ceph nodes (preconfig.yml, sudo tag).
+# =============================================================================
+- name: Ceph upgrade | preflight and cephadm upgrade
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [upgrade]
+  roles: [ceph_upgrade]
+
+- name: Ceph upgrade | cephadm and ceph-common packages of the new release
+  hosts: ceph_nodes
+  become: true
+  gather_facts: true
+  gather_subset: [min]
+  tags: [packages]
+  tasks:
+    - name: Ceph repository and packages
+      ansible.builtin.import_role:
+        name: ceph_prereqs
+        tasks_from: repo
+      vars:
+        ceph_release: "{{ ceph_upgrade_to }}"
+        ceph_packages_state: latest
+
+- name: Ceph upgrade | report
+  hosts: "{{ ceph_admin_host | default('ceph01') }}"
+  become: true
+  gather_facts: false
+  tags: [always]
+  tasks:
+    - name: Report | versions and health
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - ceph versions -f json
+        - ceph health
+      register: ceph_upgrade_report
+      changed_when: false
+      check_mode: false
+
+    - name: Report | result
+      ansible.builtin.debug:
+        msg: >-
+          {{ ['running: ' ~ (_out | regex_findall('ceph version ([0-9.]+)') | unique | join(', '))
+              ~ ' (' ~ ((_out | from_json).overall.values() | list | sum) ~ ' daemons)',
+              'health: ' ~ ceph_upgrade_report.results[1].stdout]
+             + ([] if ceph_release == ceph_upgrade_to else
+                ['Next: set "ceph_release: ' ~ ceph_upgrade_to ~ '" in inventory/group_vars/ceph_nodes.yml,'
+                 ~ ' commit and push (the repo is not written from here).']) }}
+      vars:
+        _out: "{{ ceph_upgrade_report.results[0].stdout }}"

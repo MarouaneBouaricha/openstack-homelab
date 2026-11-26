@@ -4,15 +4,15 @@
 #
 #   upgrade  apt update + upgrade
 #   docker   docker.io, enabled and started
-#   cephadm  download.ceph.com repo ({{ ceph_release }}, default squid) +
-#            cephadm + ceph-common
+#   cephadm  download.ceph.com repo of ceph_release (the release the cluster
+#            runs, inventory/group_vars/ceph_nodes.yml) + cephadm + ceph-common;
+#            ceph-upgrade.yml moves both to the next release
 #   reboot   only nodes that need it (/var/run/reboot-required), one at a time
 #
 # Installs packages only: no cluster is bootstrapped or configured.
 #
 # Run from the repo root on the deploy VM:
 #   ansible-playbook playbooks/ceph-prereqs.yml -K
-#   ansible-playbook playbooks/ceph-prereqs.yml -K -e ceph_release=tentacle
 #   ansible-playbook playbooks/ceph-prereqs.yml -K --skip-tags reboot
 # =============================================================================
 - name: Ceph prerequisites | packages
