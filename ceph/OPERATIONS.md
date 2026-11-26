@@ -6,7 +6,7 @@ adding and removing disks and nodes, upgrades, backups. The build itself is in
 
 Lab assumptions: 3 nodes (`ceph01`-`ceph03`) with 2 OSDs each, 3 MONs, 2 MGRs,
 pools `images` / `volumes` / `vms` at `size 3` / `min_size 2` with failure
-domain = host, release reef (upgrades below). `ceph` commands run as root on **ceph01** or **ceph02** (both
+domain = host, release squid (upgrades below). `ceph` commands run as root on **ceph01** or **ceph02** (both
 carry the `_admin` label, so cephadm keeps `/etc/ceph/ceph.conf` and the admin
 keyring on them), or in `cephadm shell`.
 

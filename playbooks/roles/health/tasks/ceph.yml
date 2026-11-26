@@ -28,7 +28,8 @@
            {'area': 'ceph', 'check': 'health',
             'status': {'HEALTH_OK': 'PASS', 'HEALTH_WARN': 'WARN'}.get(_health.status | default(''), 'FAIL'),
             'detail': (_health.status | default('ceph CLI failed: ' ~ _raw[0].stderr | default('')))
-                      ~ ((' ' ~ (_health.checks | default({}) | list | join(', '))) if _health.checks | default({}) else '')},
+                      ~ ((' ' ~ (_active_checks | join(', '))) if _active_checks else '')
+                      ~ ((' (muted: ' ~ (_muted | join(', ')) ~ ')') if _muted else '')},
            {'area': 'ceph', 'check': 'mon quorum',
             'status': 'PASS' if (_status.quorum_names | default([]) | length) == (_status.monmap.num_mons | default(-1)) else 'FAIL',
             'detail': (_status.quorum_names | default([]) | join(', ')) ~ ' of ' ~ (_status.monmap.num_mons | default('?'))},
@@ -57,6 +58,9 @@
     _raw: "{{ health_ceph.results }}"
     _status: "{{ (_raw[0].stdout | from_json) if _raw[0].rc == 0 else {} }}"
     _health: "{{ _status.health | default({}) }}"
+    # muted checks don't change the status; listed apart so they stay visible
+    _muted: "{{ _health.mutes | default([]) | map(attribute='code') | list }}"
+    _active_checks: "{{ _health.checks | default({}) | list | reject('in', _muted) | list }}"
     _osdmap: "{{ _status.osdmap | default({}) }}"
     _pgmap: "{{ _status.pgmap | default({}) }}"
     _clean_pgs: >-

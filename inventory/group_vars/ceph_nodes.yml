@@ -10,7 +10,7 @@ provider_interface: null
 # Release the cluster runs: download.ceph.com repo + cephadm / ceph-common on
 # the nodes (ceph-prereqs.yml). ceph-upgrade.yml moves the cluster one release
 # up and then asks to change this line (reef 18.2 -> squid 19.2 -> tentacle 20.2).
-ceph_release: reef
+ceph_release: squid
 
 # Target version of each release for ceph-upgrade.yml (-e ceph_upgrade_to=...)
 ceph_upgrade_versions:

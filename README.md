@@ -15,7 +15,7 @@ playbooks and the Kolla configuration.
 |-----------|---------|-------|
 | OpenStack | 2026.1 (Gazpacho) | Keystone, Glance, Nova, Neutron (Open vSwitch), Cinder, Horizon, behind HAProxy + keepalived |
 | Kolla-Ansible | 22.x | Upstream images from `quay.io/openstack.kolla`, Docker runtime |
-| Ceph | Reef 18.2 (`ceph_release`; upgrade with `ceph-upgrade.yml` to Squid 19.2, then Tentacle 20.2) | cephadm, 3 MONs, 6 OSDs, 3 replicas; RBD pools `images`, `volumes`, `vms` |
+| Ceph | Squid 19.2.7 (`ceph_release`; next: Tentacle 20.2 with `ceph-upgrade.yml`) | cephadm, 3 MONs, 6 OSDs, 3 replicas; RBD pools `images`, `volumes`, `vms` |
 | Ubuntu | 24.04 (OpenStack nodes), 22.04 (deploy VM, Ceph nodes) | |
 | Ansible | ansible-core 2.20 (Kolla), 2.16+ (this repo's playbooks) | |
 
