@@ -54,10 +54,11 @@
   register: ceph_upgrade_noautoscale
   changed_when: false
 
+# The CLI prints "noautoscale is on|off" on stderr
 - name: Finish | resume the PG autoscaler
   ansible.builtin.command: ceph osd pool unset noautoscale
   changed_when: true
-  when: "'is on' in ceph_upgrade_noautoscale.stdout"
+  when: "'is on' in (ceph_upgrade_noautoscale.stdout ~ ceph_upgrade_noautoscale.stderr)"
 
 # cephadm mutes the AUTH_INSECURE_* checks while it upgrades and unmutes all
 # of them when it completes, including the sticky ones from ceph_health_mutes
