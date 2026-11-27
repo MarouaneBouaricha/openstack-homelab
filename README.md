@@ -3,11 +3,11 @@
 A multi-node **OpenStack 2026.1** cloud deployed with
 **[Kolla-Ansible](https://docs.openstack.org/kolla-ansible/latest/)** on 7 VMware
 VMs, with a 3-node **Ceph** cluster (cephadm) as the storage backend for images,
-volumes and VM disks. Everything needed to rebuild it is in this repo: the
-Ansible playbooks that prepare the nodes, per-VM network config, the Ceph
-playbooks and the Kolla configuration.
+volumes and VM disks, and as an **S3** object store (RGW). Everything needed to
+rebuild it is in this repo: the Ansible playbooks that prepare the nodes,
+per-VM network config, the Ceph playbooks and the Kolla configuration.
 
-![Architecture: 7 VMs on the management, provider and storage networks](docs/architecture.png)
+![Architecture: 7 VMs on the management, provider and storage networks, with the OpenStack VIP and the S3 VIP](docs/architecture.png)
 
 ## What's inside
 
@@ -15,7 +15,8 @@ playbooks and the Kolla configuration.
 |-----------|---------|-------|
 | OpenStack | 2026.1 (Gazpacho) | Keystone, Glance, Nova, Neutron (Open vSwitch), Cinder, Horizon, behind HAProxy + keepalived |
 | Kolla-Ansible | 22.x | Upstream images from `quay.io/openstack.kolla`, Docker runtime |
-| Ceph | Tentacle 20.2.5 (`ceph_release`; upgraded from Reef with `ceph-upgrade.yml`) | cephadm, 3 MONs, 6 OSDs, 3 replicas; RBD pools `images`, `volumes`, `vms` |
+| Ceph | Tentacle 20.2.5 (`ceph_release`; upgraded from Reef with `ceph-upgrade.yml`) | cephadm, 3 MONs, 6 OSDs, 3 replicas; RBD pools `images`, `volumes`, `vms`; CephX keys `aes256k` except OpenStack's two ([why](ceph/OPERATIONS.md#cephx-key-types)) |
+| Object storage | Ceph RGW (S3), standalone | Gateways on ceph02 + ceph03 behind haproxy + keepalived, S3 VIP `10.0.0.150`; local RGW users, no Keystone ([ceph/README.md](ceph/README.md#object-storage-rgw-s3)) |
 | Ubuntu | 24.04 (OpenStack nodes), 22.04 (deploy VM, Ceph nodes) | |
 | Ansible | ansible-core 2.20 (Kolla), 2.16+ (this repo's playbooks) | |
 
@@ -28,9 +29,10 @@ playbooks and the Kolla configuration.
 | compute01  | Nova compute (KVM)                 | 4    | 8 GB | 50 GB              | 10.0.0.30      | 10.0.2.30   |
 | compute02  | Nova compute (KVM)                 | 4    | 8 GB | 50 GB              | 10.0.0.40      | 10.0.2.40   |
 | ceph01     | Ceph mon · mgr · osd               | 4    | 8 GB | 50 GB + 2 × 100 GB | 10.0.0.50      | 10.0.2.50   |
-| ceph02     | Ceph mon · mgr · osd               | 4    | 8 GB | 50 GB + 2 × 100 GB | 10.0.0.60      | 10.0.2.60   |
-| ceph03     | Ceph mon · osd                     | 4    | 8 GB | 50 GB + 2 × 100 GB | 10.0.0.70      | 10.0.2.70   |
+| ceph02     | Ceph mon · mgr · osd · rgw         | 4    | 8 GB | 50 GB + 2 × 100 GB | 10.0.0.60      | 10.0.2.60   |
+| ceph03     | Ceph mon · osd · rgw               | 4    | 8 GB | 50 GB + 2 × 100 GB | 10.0.0.70      | 10.0.2.70   |
 | **VIP**    | `kolla_internal_vip_address`       |      |      |                    | **10.0.0.100** | —           |
+| **S3 VIP** | `ceph_rgw_vip` (keepalived on ceph02/03) |  |   |                    | **10.0.0.150** | —           |
 
 About 28 vCPU and 52 GB RAM in total. The compute VMs need nested
 virtualization (VMware: *Virtualize Intel VT-x/EPT or AMD-V/RVI*), otherwise
@@ -41,9 +43,9 @@ virtualization (VMware: *Virtualize Intel VT-x/EPT or AMD-V/RVI*), otherwise
 | # | Name       | CIDR          | NIC      | Purpose |
 |---|------------|---------------|----------|---------|
 | — | NAT        | DHCP (VMware) | `nat01`  | Internet access, default route + DNS, every VM |
-| ① | Management | 10.0.0.0/24   | `mgmt01` | SSH, Ansible, OpenStack APIs, VIP (`network_interface`) |
+| ① | Management | 10.0.0.0/24   | `mgmt01` | SSH, Ansible, OpenStack APIs, VIP (`network_interface`), S3 clients via the S3 VIP 10.0.0.150 |
 | ② | Provider   | no IP         | `prov01` | Neutron external network (`neutron_external_interface`), controller + computes |
-| ③ | Storage    | 10.0.2.0/24   | `stor01` | Ceph public + cluster traffic, OpenStack → Ceph RBD (`storage_interface`) |
+| ③ | Storage    | 10.0.2.0/24   | `stor01` | Ceph public + cluster traffic, OpenStack → Ceph RBD (`storage_interface`), RGW gateways behind the S3 VIP |
 
 NICs are matched by MAC and renamed by [netplan](netplan/README.md), so the names
 are the same on every VM.

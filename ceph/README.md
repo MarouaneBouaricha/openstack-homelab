@@ -117,9 +117,13 @@ client ──► http://10.0.0.150:80  (keepalived VIP on mgmt01, haproxy on cep
   in `inventory/hosts.yml`. Each gateway listens on its storage IP
   (`ceph_rgw_networks`), port `ceph_rgw_port`.
 - **Why the storage network:** the dashboard's Object Gateway pages call RGW
-  at the daemons' Ceph public address (the storage IP); Reef has no setting
-  to change it. Gateways bound to the management IP show "The Object Gateway
-  Service is not configured ... Connection refused".
+  at the daemons' Ceph public address (the storage IP); Reef 18.2.8, where
+  this was set up, had no setting to change it. Gateways bound to the
+  management IP show "The Object Gateway Service is not configured ...
+  Connection refused".
+- **Dashboard:** the Gateways, Users and Buckets pages work; the *Overview*
+  page piles up requests on every refresh and freezes the browser tab (same
+  code in squid and tentacle), so open the other pages directly.
 - **Realm / zonegroup / zone:** `homelab` / `homelab` / `homelab-a`, a
   single-site layout that can grow into multisite. The pools are created by
   RGW on first start and named after the zone (`homelab-a.rgw.*`), plus

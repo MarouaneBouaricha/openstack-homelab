@@ -5,8 +5,9 @@ adding and removing disks and nodes, upgrades, backups. The build itself is in
 [README.md](README.md).
 
 Lab assumptions: 3 nodes (`ceph01`-`ceph03`) with 2 OSDs each, 3 MONs, 2 MGRs,
-pools `images` / `volumes` / `vms` at `size 3` / `min_size 2` with failure
-domain = host, release tentacle (upgrades below). `ceph` commands run as root on **ceph01** or **ceph02** (both
+2 RGW gateways (ceph02, ceph03) behind the S3 VIP `10.0.0.150`, pools
+`images` / `volumes` / `vms` at `size 3` / `min_size 2` with failure
+domain = host, release tentacle 20.2.5 (upgrades below). `ceph` commands run as root on **ceph01** or **ceph02** (both
 carry the `_admin` label, so cephadm keeps `/etc/ceph/ceph.conf` and the admin
 keyring on them), or in `cephadm shell`.
 
@@ -18,6 +19,10 @@ deploy VM (`source ~/venv/bin/activate`, repo root):
 | Hosts, storage IPs, labels (`_admin`, `mon`, `mgr`) | `inventory/hosts.yml` (`ceph_nodes`, `ceph_labels`) | `ceph-cluster.yml --tags specs` |
 | MON / MGR placement (hosts with the `mon` / `mgr` label), OSDs on every empty disk | `inventory/group_vars/ceph_nodes.yml`, `playbooks/roles/ceph_specs/templates/cluster-spec.yml.j2` | `ceph-cluster.yml --tags specs` |
 | Pools, CephX users, Kolla keyrings | `inventory/group_vars/ceph_nodes.yml` | `ceph-pools.yml` |
+| Config options (OSD memory), accepted health mutes | `inventory/group_vars/ceph_nodes.yml` (`ceph_config`, `ceph_health_mutes`) | `ceph-cluster.yml --tags config` |
+| S3 gateway: hosts (`rgw` label), port, realm/zone, ingress VIP | `inventory/hosts.yml`, `inventory/group_vars/ceph_nodes.yml` (`ceph_rgw_*`) | `ceph-cluster.yml --tags rgw` |
+| Release, upgrade targets | `inventory/group_vars/ceph_nodes.yml` (`ceph_release`, `ceph_upgrade_versions`) | `ceph-prereqs.yml`, `ceph-upgrade.yml` |
+| Root filesystem size (grow into the free VG space) | `playbooks/roles/ceph_prereqs/defaults/main.yml` | `ceph-prereqs.yml --tags rootfs` |
 
 Change these files, not the cluster by hand: a later run puts the repo's
 state back. Preview with `--check --diff`.
@@ -34,7 +39,7 @@ to it, one daemon at a time.
 | `ceph osd ok-to-stop <id>`, `ceph mon ok-to-stop <id>`, `ceph orch host ok-to-stop <host>` | "Can this go down without losing I/O or quorum?" |
 | `ceph orch host maintenance enter/exit <host>` | Take one node down: stops its daemons, sets noout for it |
 | `ceph osd set noout` / `norebalance` | No data movement during a short outage |
-| `ceph orch upgrade start` | Rolling upgrade in the right order (MGR → MON → OSD …) |
+| `ceph-upgrade.yml -e ceph_upgrade_to=<release>` | Rolling upgrade (`ceph orch upgrade start`: MGR → MON → OSD …), see [Upgrades](#upgrades) |
 
 Use the same loop for every change:
 
@@ -51,9 +56,10 @@ Health check, daily and before and after every change, from the deploy VM:
 ansible-playbook playbooks/health.yml --tags ceph    # or without --tags: the whole lab
 ```
 
-It checks HEALTH_OK, MON quorum, OSDs up/in, PGs active+clean, the fullest OSD
-against the 40% rule ([Capacity](#capacity)), cephadm daemons and new crashes,
-and fails if anything is wrong. For details, on ceph01: `ceph health detail`,
+It checks HEALTH_OK (muted checks are listed apart), MON quorum, OSDs up/in,
+PGs active+clean, the fullest OSD against the 40% rule
+([Capacity](#capacity)), cephadm daemons, new crashes, and that both RGW
+gateways and the S3 VIP answer, and fails if anything is wrong. For details, on ceph01: `ceph health detail`,
 `ceph osd df tree`, `ceph orch ps --refresh`, `ceph crash ls-new`.
 
 ## Node maintenance
@@ -228,8 +234,9 @@ instance from a Glance image, attach a Cinder volume). Repeat with
   refresh; the code is the same in squid and tentacle). The Gateways, Users
   and Buckets pages are fine.
 - **Operating system:** standard support for Ubuntu 22.04 ends in 2027. Move
-  the Ceph nodes to 24.04 one at a time in maintenance mode. Check first that
-  download.ceph.com publishes noble builds of your Ceph release.
+  the Ceph nodes to 24.04 one at a time in maintenance mode. download.ceph.com
+  publishes noble builds of tentacle (checked 2026-11-27), so `ceph-prereqs.yml`
+  works on 24.04 nodes as well.
 
 
 ## CephX key types
@@ -313,5 +320,9 @@ and the same `reconfigure`.
   ceph orch ls --export > specs.yml
   ceph mon dump > monmap.txt
   ```
+- **What the playbooks already keep** on ceph01, in `/root/ceph-backups/`
+  (root only): `ceph orch ls --export` before every spec apply, the cluster
+  state before every upgrade (`upgrade-<ts>-to-<version>.txt`), and the key
+  export taken before the CephX rotation (secret). Copy them off with the rest.
 - **Power off / power on** order (Ceph after OpenStack, with `noout`): see
   [kolla/OPERATIONS.md](../kolla/OPERATIONS.md#power-off--power-on-the-lab).

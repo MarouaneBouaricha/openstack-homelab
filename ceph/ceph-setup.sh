@@ -19,6 +19,11 @@
 #   steps 5-7  playbooks/ceph-pools.yml (tags pools, users, clients)
 # The values they use live in inventory/hosts.yml and
 # inventory/group_vars/ceph_nodes.yml, not here.
+#
+# Not in this runbook, playbooks only: OSD memory and accepted health mutes
+# (ceph-cluster.yml --tags config), the S3 gateway (--tags rgw), release
+# upgrades (ceph-upgrade.yml) and growing the root LV (ceph-prereqs.yml
+# --tags rootfs). The lab was built on squid; it now runs tentacle 20.2.5.
 # =============================================================================
 echo "ceph/ceph-setup.sh is a runbook: copy the steps one at a time (see ceph/README.md)." >&2
 exit 1
@@ -36,9 +41,10 @@ systemctl enable --now docker
 # Do NOT install systemd-timesyncd: it conflicts with chrony and removes it.
 
 # Ceph repo (signed-by keyring; apt-key is deprecated) + cephadm, Ubuntu 22.04
+# Release = ceph_release in inventory/group_vars/ceph_nodes.yml (now tentacle)
 install -d -m 0755 /etc/apt/keyrings
 wget -qO /etc/apt/keyrings/ceph.asc https://download.ceph.com/keys/release.asc
-echo "deb [signed-by=/etc/apt/keyrings/ceph.asc] https://download.ceph.com/debian-squid/ $(lsb_release -sc) main" \
+echo "deb [signed-by=/etc/apt/keyrings/ceph.asc] https://download.ceph.com/debian-tentacle/ $(lsb_release -sc) main" \
     > /etc/apt/sources.list.d/ceph.list
 apt update
 apt install -y cephadm ceph-common
